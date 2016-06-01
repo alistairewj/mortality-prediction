@@ -578,7 +578,7 @@ def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, died
     if df_additional_data is not None:
         df = df.merge(df_additional_data,how='left', left_index=True, right_index=True)
 
-    # change y to be "died within 24 hours"
+    # change y to be "died within X seconds", where X is specified by the user
     if diedWithin is not None:
         df = df.merge(df_offset[['intime','deathtime','starttime']],
         how='left', left_index=True, right_index=True)
@@ -587,8 +587,8 @@ def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, died
         idxUpdate = ~df['deathtime'].isnull()
         df.loc[idxUpdate,'hospital_expire_flag'] = (df.loc[idxUpdate,'deathtime'] <
                                                         (df.loc[idxUpdate,'intime']
-                                                         + pd.to_timedelta(df.loc[idxUpdate,'starttime'], 'm')
-                                                         + np.timedelta64(diedWithin, 'h')))
+                                                         + pd.to_timedelta(df.loc[idxUpdate,'starttime'], 's')
+                                                         + np.timedelta64(diedWithin, 's')))
 
         # drop the columns temporarily added to redefine the outcome
         df.drop('intime',axis=1,inplace=True)
