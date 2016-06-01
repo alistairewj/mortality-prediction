@@ -97,11 +97,11 @@ def vars_of_interest_streaming():
 
     return var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early
 
-def gen_random_offset(df_static, T=4, death_fix=True, T_before_death=None):
+def gen_random_offset(df_static, T=4*60*60, death_fix=True, T_before_death=None):
     # df_static - dataframe with intime, outtime
-    # T - offset time, we ensure we are at least T hours before death
-    # T_before_death - if this is not None, we *fix* the offset to be T_before_death hours
-    #       this is useful for evaluating how well the algorithm discriminates at T hours
+    # T - offset time, we ensure we are at least T seconds before death
+    # T_before_death - if this is not None, we *fix* the offset to be T_before_death seconds
+    #       this is useful for evaluating how well the algorithm discriminates at T seconds before expiry
     # death_fix - ensures that outtime is the minimum of (outtime, deathtime)
     tau = np.random.rand(df_static.shape[0])
     df_static['endtime'] = df_static['outtime']
@@ -111,7 +111,7 @@ def gen_random_offset(df_static, T=4, death_fix=True, T_before_death=None):
         idxFix = (~df_static['deathtime'].isnull()) & (df_static['deathtime'] < df_static['outtime'])
         df_static.loc[idxFix, 'endtime'] = df_static.loc[idxFix, 'deathtime']
 
-    df_static['starttime'] = tau*((df_static['endtime'] - np.timedelta64(T,'h') - df_static['intime']) / np.timedelta64(1,'m'))
+    df_static['starttime'] = tau*((df_static['endtime'] - np.timedelta64(T,'s') - df_static['intime']) / np.timedelta64(1,'s'))
 
     # 10 ICU stays with null outtime - ??? should not be in the DB
     df_static['starttime'].fillna(0,inplace=True)
@@ -129,7 +129,7 @@ def gen_random_offset(df_static, T=4, death_fix=True, T_before_death=None):
         np.floor(\
                  (df_static.loc[df_static['hospital_expire_flag'] == 1, 'endtime'] \
                  - df_static.loc[df_static['hospital_expire_flag'] == 1, 'intime'] \
-                 - np.timedelta64(T_before_death,'h')) / np.timedelta64(1,'m')
+                 - np.timedelta64(T_before_death,'s')) / np.timedelta64(1,'s')
                  )
 
     # create a dictionary of starttimes
@@ -173,11 +173,9 @@ def sum_nonan(x):
     else:
         return np.sum(x)
 
-#TODO: refactor so everything is in seconds
-
 # generate the X data - assume we have given a *single patient's* dataframe
 def extract_feature(df, fcnToApply, start=0, offset=24*60*60):
-    # df should be indexed by "timeelapsed" - fractional minutes since ICU admission
+    # df should be indexed by "timeelapsed" - fractional seconds since ICU admission
 
     # find the nearest start/end time
     # ERROR: the below line doesn't work when start // start+offset aren't in the index.. though I'm not sure why.
@@ -195,7 +193,7 @@ def extract_feature(df, fcnToApply, start=0, offset=24*60*60):
     #return pd.DataFrame(data=np.reshape(X_tmp.values,[1,X_tmp.values.shape[0]]),
     #                    dtype=float, columns=X_tmp.index.values)
 
-def extract_feature_sp(df, start=0, offset=4*60*60):
+def extract_feature_sp(df, start=0, offset=4*60*60, t_add=24*60*60):
     df = df.sort_index()
 
     var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
@@ -205,10 +203,9 @@ def extract_feature_sp(df, start=0, offset=4*60*60):
     X_min = extract_feature(df.loc[:, var_min], min_nonan, start=start, offset=offset)
     X_max = extract_feature(df.loc[:, var_max], max_nonan, start=start, offset=offset)
 
-    # since labs/UO are infrequently sampled, we give them an extra 24 hours for data extraction
-    t_add = 24*60*60
-    X_first_early = extract_feature(df.loc[:, var_first_early], first_nonan, start=start*60-t_add, offset=offset+t_add)
-    X_last_early = extract_feature(df.loc[:, var_last_early], last_nonan, start=start*60-t_add, offset=offset+t_add)
+    # since labs/UO are infrequently sampled, we give them an extra t_add for data extraction (usually 24 hours)
+    X_first_early = extract_feature(df.loc[:, var_first_early], first_nonan, start=start-t_add, offset=offset+t_add)
+    X_last_early = extract_feature(df.loc[:, var_last_early], last_nonan, start=start-t_add, offset=offset+t_add)
     X_sum = extract_feature(df.loc[:, var_sum], sum_nonan, start=start-t_add, offset=offset+t_add)
 
     return X_first, X_last, X_first_early, X_last_early, X_min, X_max, X_sum
