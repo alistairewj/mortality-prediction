@@ -316,6 +316,43 @@ def extract_feature_across_sp(df, T=4*60*60):
 
     return df_data
 
+def collapse_data(data):
+    # this collapses a dictionary of dataframes into a single dataframe
+    # joins them together on icustay_id and charttime
+    files = data.keys()
+    initFlag = False # tells the function to create a new dataframe
+
+    # dictionary mapping table names to column name of interest
+    colNameMap = {'vent': 'vent',
+                  'vasopressor': 'vasopressor',
+                  'rrt_range': 'rrt'}
+    rangeTbl = ['vent','vasopressor','rrt_range']
+
+    # merge all data from above dictionary into a single data frame
+    for i, f in enumerate(files):
+        df_tmp = data[f]
+
+        if 'subject_id' in df_tmp.columns:
+            df_tmp.drop('subject_id',axis=1,inplace=True)
+        if 'hadm_id' in df_tmp.columns:
+            df_tmp.drop('hadm_id',axis=1,inplace=True)
+        if 'storetime' in df_tmp.columns:
+            df_tmp.drop('storetime',axis=1,inplace=True)
+
+        print('{:20s}... finished.'.format(f))
+        if f in rangeTbl:
+            continue # these are rangesignal tables.. need to be handled separately
+
+        if initFlag == False:
+            df = df_tmp.copy()
+            initFlag = True
+            continue
+        else:
+            df = df.merge(df_tmp,
+                            on=['icustay_id','charttime_elapsed'],
+                            how='outer')
+
+        return df
 
 
 def plot_xgb_importance_fmap(xgb_model, X_header=None, ax=None, height=0.2,
