@@ -23,6 +23,7 @@ select
       as THIRTYDAY_EXPIRE_FLAG
   , ie.los as icu_los
   , extract(epoch from (adm.dischtime - adm.admittime))/60.0/60.0/24.0 as hosp_los
+  , ceil(extract(epoch from (adm.deathtime - ce.intime_hr))/60.0/60.0) as deathtime_hours
 
 -- exclusions
 , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 16 then 1 else 0 end as exclusion_adult
@@ -32,13 +33,16 @@ select
        when ce.intime_hr is null then 1
        when ce.outtime_hr is null then 1
     else 0 end as exclusion_valid_data
-
+, case
+    when (ce.outtime_hr-ce.intime_hr) <= interval '4' hour then 1
+  else 0 end as exclusion_short_stay
+  
 -- organ donor accounts
 , case when (
        (lower(diagnosis) like '%organ donor%' and deathtime is not null)
     or (lower(diagnosis) like '%donor account%' and deathtime is not null)
   ) then 1 else 0 end as exclusion_organ_donor
-  
+
 -- the above flags are used to summarize patients excluded
 -- below flag is used to actually exclude patients in future queries
 , case  when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 16 then 1
@@ -47,6 +51,7 @@ select
         when ie.outtime is null then 1
         when ce.intime_hr is null then 1
         when ce.outtime_hr is null then 1
+        when (ce.outtime_hr-ce.intime_hr) <= interval '4' hour then 1
         when ((lower(diagnosis) like '%organ donor%' and deathtime is not null)
             or (lower(diagnosis) like '%donor account%' and deathtime is not null)) then 1
       else 0 end as excluded
