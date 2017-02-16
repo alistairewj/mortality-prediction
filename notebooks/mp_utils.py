@@ -346,7 +346,29 @@ def plot_xgb_importance_fmap(xgb_model, X_header=None, ax=None, height=0.2,
         ax.set_ylabel(ylabel)
     ax.grid(grid)
     return ax
-    
+
+def plot_vitals(df, iid, df_death=None):
+    plt.figure(figsize=[14,10])
+    idx = df['icustay_id']==iid
+    plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'heartrate'], 'ro-', label='Heart rate' )
+    plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'sysbp'], 'b^', label='Systolic BP', alpha=0.5 )
+    plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'diasbp'], 'bv', label='Diastolic BP', alpha=0.5 )
+    plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'meanbp'], 'bd', label='Mean BP', alpha=0.8 )
+    plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'resprate'], 'go', label='Respiratory rate', alpha=0.5 )
+
+    if df_death is not None:
+        # add in discharge/death time
+        idx = df_death['icustay_id']==iid
+        plt.plot( np.ones([2,])*df_death.loc[idx, 'dischtime_hours'].values, [0,200], 'k--', linewidth=2, label='Time of discharge' )
+        if df_death.loc[idx,'deathtime_hours'] is not np.nan:
+            plt.plot( np.ones([2,])*df_death.loc[idx, 'deathtime_hours'].values, [0,200], 'k-', linewidth=2, label='Time of death' )
+        plt.xlim([-1, df_death.loc[idx, 'dischtime_hours'].values+6])
+    plt.xlabel('Hours since ICU admission', fontsize=20)
+    plt.ylabel('Vital sign value', fontsize=20)
+    plt.grid()
+    plt.legend(loc='best')
+    plt.show()
+
 def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, diedWithin=None):
     # this function loads in the data from csv
     # co is a dataframe with:
