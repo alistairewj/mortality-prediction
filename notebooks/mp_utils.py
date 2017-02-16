@@ -5,30 +5,14 @@ import psycopg2
 import sys
 import datetime as dt
 from sklearn import metrics
+import matplotlib.pyplot as plt
 
-def generate_times(df, T=4, analysis_type=None, seed=None):
+def generate_times(df, T=4, T_to_death=None, seed=None):
     # generate a dictionary based off of the analysis type desired
+    # creates "windowtime" - the time at the end of the window
     if seed is None:
-        seeds = {'base': 473010,
-        'base': 217632,
-        '00': 724311,
-        '04': 952227,
-        '08': 721297,
-        '16': 968879,
-        '24': 608972,
-        'fixed': 585794,
-        'wt8': 176381,
-        'wt16': 658229,
-        'wt24': 635170,
-        'wt8_00': 34741,
-        'wt8_08': 95467,
-        'wt8_16': 85349,
-        'wt8_24': 89642}
-        if analysis_type not in seeds:
-            print('Unrecognized/unspecified analysis type. Using default seed 111.')
-            seed=111
-        else:
-            seed = seeds[analysis_type]
+        print('Using default seed 111.')
+        seed=111
 
     np.random.seed(seed)
 
@@ -40,13 +24,22 @@ def generate_times(df, T=4, analysis_type=None, seed=None):
     idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
     df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
 
-    df['starttime'] = np.floor(tau*(df['endtime']-T))
-    # if the stay is shorter than T hours, the interval can be negative
-    # in this case, we set the interval to 0
-    df.loc[df['starttime']<0, 'starttime'] = 0
+    if T is not None:
+        # extract window at least T hours before discharge/death
+        df['windowtime'] = np.floor(tau*(df['endtime']-T))
+        # if the stay is shorter than T hours, the interval can be negative
+        # in this case, we set the interval to 0
+        df.loc[df['windowtime']<0, 'windowtime'] = 0
 
-    start_dict = df.set_index('icustay_id')['starttime'].to_dict()
-    return start_dict
+    if T_to_death is not None:
+        # fix the time for those who die to be T_to_death hours from death
+        # first, isolate patients where they were in the ICU T hours before death
+        idxInICU = (df['deathtime_hours'] - df['deathtime_hours'])<T_to_death
+        # for these patients, set the time to be T_to_death hours
+        df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
+
+    windowtime_dict = df.set_index('icustay_id')['windowtime'].to_dict()
+    return windowtime_dict
 
 # pretty confusion matrices!
 def print_cm(y, yhat):
@@ -143,9 +136,9 @@ def vars_of_interest_streaming():
     return var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early
 
 
-def get_design_matrix(df, time_dict, T=8, t_extra=24):
-    # t_extra is the number of extra hours to look backward for labs
-    # e.g. if t_extra=24 we look back an extra 24 hours for lab values
+def get_design_matrix(df, time_dict, W=8, W_extra=24):
+    # W_extra is the number of extra hours to look backward for labs
+    # e.g. if W_extra=24 we look back an extra 24 hours for lab values
 
     # timing info for icustay_id < 200100:
     #   5 loops, best of 3: 877 ms per loop
@@ -156,13 +149,10 @@ def get_design_matrix(df, time_dict, T=8, t_extra=24):
     # get the hardcoded variable names
     var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
 
-    T=8
-    t_extra=24
-
     tmp = np.asarray(time_dict.items()).astype(int)
     N = tmp.shape[0]
 
-    M = T+t_extra
+    M = W+W_extra
     # create a vector of [0,...,M] to represent the hours we need to subtract for each icustay_id
     hr = np.linspace(0,M,M+1,dtype=int)
     hr = np.reshape(hr,[1,M+1])
@@ -175,7 +165,7 @@ def get_design_matrix(df, time_dict, T=8, t_extra=24):
     tmp_early_flag = np.copy(tmp[:,1])
 
     # adding hr to tmp[:,1] gives us what we want: integers in the range [Tn-T, Tn]
-    tmp = np.column_stack([tmp[:,0], tmp[:,1]-hr, hr>T])
+    tmp = np.column_stack([tmp[:,0], tmp[:,1]-hr, hr>W])
 
     # create dataframe with tmp
     df_time = pd.DataFrame(data=tmp, index=None, columns=['icustay_id','hr','early_flag'])
@@ -190,7 +180,7 @@ def get_design_matrix(df, time_dict, T=8, t_extra=24):
 
 
     # slice down df_time by removing early times
-    # isolate only have data from [Tn - T, ..., Tn]
+    # isolate only have data from [t - W, t - W + 1, ..., t]
     df = df.loc[df['early_flag']==0,:]
 
     df_first = df.groupby('icustay_id')[var_first].first()
@@ -216,13 +206,13 @@ def get_design_matrix(df, time_dict, T=8, t_extra=24):
 # this function is used to print out data for a single pt
 # mainly used for debugging weird inconsistencies in data extraction
 # e.g. "wait why does this icustay_id not have heart rate?"
-def debug_for_iid(df, time_dict, iid, T=8, t_extra=24):
+def debug_for_iid(df, time_dict, iid, T=8, W_extra=24):
     #tmp = np.asarray(time_dict.items()).astype(int)
     tmp = np.asarray([iid, time_dict[iid]]).astype(int)
     tmp = np.reshape(tmp,[1,2])
     N = tmp.shape[0]
 
-    M = T+t_extra
+    M = W+W_extra
     # create a vector of [0,...,M] to represent the hours we need to subtract for each icustay_id
     hr = np.linspace(0,M,M+1,dtype=int)
     hr = np.reshape(hr,[1,M+1])
@@ -356,8 +346,7 @@ def plot_xgb_importance_fmap(xgb_model, X_header=None, ax=None, height=0.2,
         ax.set_ylabel(ylabel)
     ax.grid(grid)
     return ax
-
-
+    
 def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, diedWithin=None):
     # this function loads in the data from csv
     # co is a dataframe with:
