@@ -6,6 +6,48 @@ import sys
 import datetime as dt
 from sklearn import metrics
 
+def generate_times(df, T=4, analysis_type=None, seed=None):
+    # generate a dictionary based off of the analysis type desired
+    if seed is None:
+        seeds = {'base': 473010,
+        'base': 217632,
+        '00': 724311,
+        '04': 952227,
+        '08': 721297,
+        '16': 968879,
+        '24': 608972,
+        'fixed': 585794,
+        'wt8': 176381,
+        'wt16': 658229,
+        'wt24': 635170,
+        'wt8_00': 34741,
+        'wt8_08': 95467,
+        'wt8_16': 85349,
+        'wt8_24': 89642}
+        if analysis_type not in seeds:
+            print('Unrecognized/unspecified analysis type. Using default seed 111.')
+            seed=111
+        else:
+            seed = seeds[analysis_type]
+
+    np.random.seed(seed)
+
+    # df is centered on intime (as t=0)
+    # we need to ensure a random time is at least T hours from death/discharge
+
+    tau = np.random.rand(df.shape[0])
+    df['endtime'] = df['dischtime_hours']
+    idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
+    df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
+
+    df['starttime'] = np.floor(tau*(df['endtime']-T))
+    # if the stay is shorter than T hours, the interval can be negative
+    # in this case, we set the interval to 0
+    df.loc[df['starttime']<0, 'starttime'] = 0
+
+    start_dict = df.set_index('icustay_id')['starttime'].to_dict()
+    return start_dict
+
 # pretty confusion matrices!
 def print_cm(y, yhat):
     print('\nConfusion matrix')
@@ -26,27 +68,30 @@ def print_cm(y, yhat):
 # these are the variables later used for prediction
 def vars_of_interest():
     # we extract the min/max for these covariates
-    var_min = ['heartrate', 'systolicbp', 'diastolicbp', 'meanbp',
-               'resprate', 'temp', 'spo2', 'glucosecharted']
+    var_min = ['heartrate', 'sysbp', 'diasbp', 'meanbp',
+                'resprate', 'tempc', 'spo2', 'glucose_chart']
     var_max = var_min
-    #var_max.extend(['rrt','vasopressor','vent'])
     var_min.append('gcs')
-
+    #var_max.extend(['rrt','vasopressor','vent'])
 
     # we extract the first/last value for these covariates
-    var_first = ['heartrate', 'systolicbp', 'diastolicbp', 'meanbp',
-                'resprate', 'temp', 'spo2', 'glucosecharted']
+    var_first = ['heartrate', 'sysbp', 'diasbp', 'meanbp',
+                'resprate', 'tempc', 'spo2', 'glucose_chart']
 
     var_last = var_first
     var_last.extend(['gcsmotor','gcsverbal','gcseyes','endotrachflag','gcs'])
 
-    var_first_early = ['bg_so2', 'bg_po2', 'bg_pco2', #'bg_fio2_chartevents', 'bg_aado2_calc',
-            'bg_fio2', 'bg_aado2', 'bg_pao2fio2', 'bg_ph', 'bg_baseexcess', 'bg_bicarbonate',
-            'bg_totalco2', 'bg_hematocrit', 'bg_hemoglobin', 'bg_carboxyhemoglobin', 'bg_methemoglobin',
-            'bg_chloride', 'bg_calcium', 'bg_temperature', 'bg_potassium', 'bg_sodium', 'bg_lactate',
-            'bg_glucose', 'bg_tidalvolume',
-            #'bg_intubated', 'bg_ventilationrate', 'bg_ventilator',
-            'bg_peep', 'bg_o2flow', 'bg_requiredo2',
+    var_first_early = ['bg_so2', 'bg_po2', 'bg_pco2',
+            #'bg_fio2_chartevents', 'bg_aado2_calc',
+            #'bg_fio2', 'bg_aado2',
+            'bg_pao2fio2ratio', 'bg_ph', 'bg_baseexcess', 'bg_bicarbonate',
+            'bg_totalco2', 'bg_hematocrit', 'bg_hemoglobin',
+            'bg_carboxyhemoglobin', 'bg_methemoglobin',
+            'bg_chloride', 'bg_calcium', 'bg_temperature',
+            'bg_potassium', 'bg_sodium', 'bg_lactate',
+            'bg_glucose',
+            # 'bg_tidalvolume', 'bg_intubated', 'bg_ventilationrate', 'bg_ventilator',
+            # 'bg_peep', 'bg_o2flow', 'bg_requiredo2',
             # begin lab values
             'aniongap', 'albumin', 'bands', 'bicarbonate', 'bilirubin', 'creatinine',
             'chloride', 'glucose', 'hematocrit', 'hemoglobin', 'lactate', 'platelet',
@@ -97,155 +142,62 @@ def vars_of_interest_streaming():
 
     return var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early
 
-def gen_random_offset(df_static, T=4*60*60, death_fix=True, T_before_death=None):
-    # df_static - dataframe with intime, outtime
-    # T - offset time, we ensure we are at least T seconds before death
-    # T_before_death - if this is not None, we *fix* the offset to be T_before_death seconds
-    #       this is useful for evaluating how well the algorithm discriminates at T seconds before expiry
-    # death_fix - ensures that outtime is the minimum of (outtime, deathtime)
-    tau = np.random.rand(df_static.shape[0])
-    df_static['endtime'] = df_static['outtime']
 
-    # ensure that, if the patient died before ICU discharge, we use the earlier time
-    if death_fix == True:
-        idxFix = (~df_static['deathtime'].isnull()) & (df_static['deathtime'] < df_static['outtime'])
-        df_static.loc[idxFix, 'endtime'] = df_static.loc[idxFix, 'deathtime']
+def get_design_matrix(df, time_dict, T=8, t_extra=24):
+    # t_extra is the number of extra hours to look backward for labs
+    # e.g. if t_extra=24 we look back an extra 24 hours for lab values
 
-    df_static['starttime'] = tau*((df_static['endtime'] - np.timedelta64(T,'s') - df_static['intime']) / np.timedelta64(1,'s'))
+    # timing info for icustay_id < 200100:
+    #   5 loops, best of 3: 877 ms per loop
 
-    # 10 ICU stays with null outtime - ??? should not be in the DB
-    df_static['starttime'].fillna(0,inplace=True)
+    # timing info for all icustay_id:
+    #   5 loops, best of 3: 1.48 s per loop
 
-    # if the stay is shorter than 4 hours, the interval can be negative
-    # in this case, we set the interval to 0
-    df_static.loc[df_static['starttime'] <  0, 'starttime'] = 0
-
-    # truncate to the minutes df
-    df_static['starttime'] = np.floor(df_static['starttime']).astype(int)
-
-    # now update starttime to be equal to (outtime - T) if they died
-    if T_before_death is not None:
-        df_static.loc[df_static['hospital_expire_flag'] == 1, 'starttime'] = \
-        np.floor(\
-                 (df_static.loc[df_static['hospital_expire_flag'] == 1, 'endtime'] \
-                 - df_static.loc[df_static['hospital_expire_flag'] == 1, 'intime'] \
-                 - np.timedelta64(T_before_death,'s')) / np.timedelta64(1,'s')
-                 )
-
-    # create a dictionary of starttimes
-    start_dict = df_static[['icustay_id','starttime']].set_index('icustay_id').to_dict()['starttime']
-
-    return start_dict
-
-# define the functions we will apply across the data
-def first_nonan(x):
-    x = x[~x.isnull()]
-    if len(x) == 0:
-        return np.nan
-    else:
-        return x.iloc[0]
-
-def last_nonan(x):
-    x = x[~x.isnull()]
-    if len(x) == 0:
-        return np.nan
-    else:
-        return x.iloc[-1]
-
-def min_nonan(x):
-    x = x[~x.isnull()]
-    if len(x) == 0:
-        return np.nan
-    else:
-        return np.min(x)
-
-def max_nonan(x):
-    x = x[~x.isnull()]
-    if len(x) == 0:
-        return np.nan
-    else:
-        return np.max(x)
-
-def sum_nonan(x):
-    x = x[~x.isnull()]
-    if len(x) == 0:
-        return np.nan
-    else:
-        return np.sum(x)
-
-# generate the X data - assume we have given a *single patient's* dataframe
-def extract_feature(df, fcnToApply, start=0, offset=24*60*60):
-    # df should be indexed by "timeelapsed" - fractional seconds since ICU admission
-
-    # find the nearest start/end time
-    # ERROR: the below line doesn't work when start // start+offset aren't in the index.. though I'm not sure why.
-    #idx = df.index.slice_indexer(start,start+offset,1)
-    # instead, we use searchsorted
-    idxStart = df.index.searchsorted(start)
-    idxEnd = df.index.searchsorted(start+offset)
-
-    idx = slice(idxStart,idxEnd,1)
-    # hack out our dataframe of interest and apply the function
-    return df.iloc[idx].apply(fcnToApply)
-
-    # below would reshape to be a single row
-    # initialize dataframe - one row with this data
-    #return pd.DataFrame(data=np.reshape(X_tmp.values,[1,X_tmp.values.shape[0]]),
-    #                    dtype=float, columns=X_tmp.index.values)
-
-def extract_feature_sp(df, start=0, offset=4*60*60, t_add=24*60*60):
-    df = df.sort_index()
-
+    # get the hardcoded variable names
     var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
 
-    X_first = extract_feature(df.loc[:, var_first], first_nonan, start=start, offset=offset)
-    X_last = extract_feature(df.loc[:, var_last], last_nonan, start=start, offset=offset)
-    X_min = extract_feature(df.loc[:, var_min], min_nonan, start=start, offset=offset)
-    X_max = extract_feature(df.loc[:, var_max], max_nonan, start=start, offset=offset)
+    T=8
+    t_extra=24
 
-    # since labs/UO are infrequently sampled, we give them an extra t_add for data extraction (usually 24 hours)
-    X_first_early = extract_feature(df.loc[:, var_first_early], first_nonan, start=start-t_add, offset=offset+t_add)
-    X_last_early = extract_feature(df.loc[:, var_last_early], last_nonan, start=start-t_add, offset=offset+t_add)
-    X_sum = extract_feature(df.loc[:, var_sum], sum_nonan, start=start-t_add, offset=offset+t_add)
+    tmp = np.asarray(time_dict.items()).astype(int)
+    N = tmp.shape[0]
 
-    return X_first, X_last, X_first_early, X_last_early, X_min, X_max, X_sum
+    M = T+t_extra
+    # create a vector of [0,...,M] to represent the hours we need to subtract for each icustay_id
+    hr = np.linspace(0,M,M+1,dtype=int)
+    hr = np.reshape(hr,[1,M+1])
+    hr = np.tile(hr,[N,1])
+    hr = np.reshape(hr, [N*(M+1),], order='F')
+
+    # duplicate tmp to M+1, as we will be creating T+1 rows for each icustay_id
+    tmp = np.tile(tmp,[M+1,1])
+
+    tmp_early_flag = np.copy(tmp[:,1])
+
+    # adding hr to tmp[:,1] gives us what we want: integers in the range [Tn-T, Tn]
+    tmp = np.column_stack([tmp[:,0], tmp[:,1]-hr, hr>T])
+
+    # create dataframe with tmp
+    df_time = pd.DataFrame(data=tmp, index=None, columns=['icustay_id','hr','early_flag'])
+    df_time.sort_values(['icustay_id','hr'],inplace=True)
+
+    # merge df_time with df to filter down to a subset of rows
+    df = df.merge(df_time, left_on=['icustay_id','hr'], right_on=['icustay_id','hr'],how='inner')
+
+    # apply functions to groups of vars
+    df_first_early  = df.groupby('icustay_id')[var_first].first()
+    df_last_early   = df.groupby('icustay_id')[var_first].last()
 
 
-def extract_feature_ap(df, start_dict, offset=4*60*60):
-    # loop across the dataframe - pull data for all patients, then stack together in a new dataframe
+    # slice down df_time by removing early times
+    # isolate only have data from [Tn - T, ..., Tn]
+    df = df.loc[df['early_flag']==0,:]
 
-    # initialize the dataframes for the data
-
-    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
-
-    df_first = pd.DataFrame(data=None, dtype=float, columns=var_first)
-    df_last  = pd.DataFrame(data=None, dtype=float, columns=var_last)
-    df_min = pd.DataFrame(data=None, dtype=float, columns=var_min)
-    df_max = pd.DataFrame(data=None, dtype=float, columns=var_max)
-    df_sum = pd.DataFrame(data=None, dtype=float, columns=var_sum)
-    df_first_early  = pd.DataFrame(data=None, dtype=float, columns=var_first_early)
-    df_last_early   = pd.DataFrame(data=None, dtype=float, columns=var_last_early)
-
-    for iid in df.index.levels[0]:
-        X_first, X_last, X_first_early, X_last_early, X_min, X_max, X_sum = \
-        extract_feature_sp(df.loc[iid, :], start=start_dict[iid], offset=offset)
-
-        # set the name of the series - when we append it to the dataframe, this becomes the index value
-        X_first.name = iid
-        X_last.name = iid
-        X_first_early.name = iid
-        X_last_early.name = iid
-        X_min.name = iid
-        X_max.name = iid
-        X_sum.name = iid
-
-        df_first = df_first.append(X_first)
-        df_last = df_last.append(X_last)
-        df_first_early = df_first_early.append(X_first_early)
-        df_last_early = df_last_early.append(X_last_early)
-        df_min = df_min.append(X_min)
-        df_max = df_max.append(X_max)
-        df_sum = df_sum.append(X_sum)
+    df_first = df.groupby('icustay_id')[var_first].first()
+    df_last  = df.groupby('icustay_id')[var_first].last()
+    df_min = df.groupby('icustay_id')[var_first].min()
+    df_max = df.groupby('icustay_id')[var_first].max()
+    df_sum = df.groupby('icustay_id')[var_first].sum()
 
     # update the column names
     df_first.columns = [x + '_first' for x in df_first.columns]
@@ -258,63 +210,55 @@ def extract_feature_ap(df, start_dict, offset=4*60*60):
 
     # now combine all the arrays together
     df_data = pd.concat([df_first, df_first_early, df_last, df_last_early, df_min, df_max, df_sum], axis=1)
-    df_data
 
     return df_data
 
+# this function is used to print out data for a single pt
+# mainly used for debugging weird inconsistencies in data extraction
+# e.g. "wait why does this icustay_id not have heart rate?"
+def debug_for_iid(df, time_dict, iid, T=8, t_extra=24):
+    #tmp = np.asarray(time_dict.items()).astype(int)
+    tmp = np.asarray([iid, time_dict[iid]]).astype(int)
+    tmp = np.reshape(tmp,[1,2])
+    N = tmp.shape[0]
 
-def extract_feature_across_sp(df, T=4*60*60):
-    """Given a dataframe for a single patient, this extracts features at *every* row
+    M = T+t_extra
+    # create a vector of [0,...,M] to represent the hours we need to subtract for each icustay_id
+    hr = np.linspace(0,M,M+1,dtype=int)
+    hr = np.reshape(hr,[1,M+1])
+    hr = np.tile(hr,[N,1])
+    hr = np.reshape(hr, [N*(M+1),], order='F')
 
-    The time elapsed (measured in minutes) should be the only index
-    """
-    df = df.sort_index()
+    # duplicate tmp to M+1, as we will be creating T+1 rows for each icustay_id
+    tmp = np.tile(tmp,[M+1,1])
 
-    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
+    tmp_early_flag = np.copy(tmp[:,1])
 
-    df_first = pd.DataFrame(data=None, dtype=float, columns=var_first)
-    df_last  = pd.DataFrame(data=None, dtype=float, columns=var_last)
-    df_min = pd.DataFrame(data=None, dtype=float, columns=var_min)
-    df_max = pd.DataFrame(data=None, dtype=float, columns=var_max)
-    df_sum = pd.DataFrame(data=None, dtype=float, columns=var_sum)
-    df_first_early  = pd.DataFrame(data=None, dtype=float, columns=var_first_early)
-    df_last_early   = pd.DataFrame(data=None, dtype=float, columns=var_last_early)
+    # adding hr to tmp[:,1] gives us what we want: integers in the range [Tn-T, Tn]
+    tmp = np.column_stack([tmp[:,0], tmp[:,1]-hr, hr>T])
 
-    for t in df.index:
-        X_first, X_last, X_first_early, X_last_early, X_min, X_max, X_sum = \
-        extract_feature_sp(df, start=t, offset=T)
+    # create dataframe with tmp
+    df_time = pd.DataFrame(data=tmp, index=None, columns=['icustay_id','hr','early_flag'])
+    df_time.sort_values(['icustay_id','hr'],inplace=True)
 
-        # set the name of the series - when we append it to the dataframe, this becomes the index value
-        X_first.name = t
-        X_last.name = t
-        X_first_early.name = t
-        X_last_early.name = t
-        X_min.name = t
-        X_max.name = t
-        X_sum.name = t
+    # display the data for this icustay_id
+    print('\n\n ALL DATA FOR THIS ICUSTAY_ID \n\n')
+    display(HTML(df.loc[df['icustay_id']==iid,:].to_html().replace('NaN','')))
 
-        df_first = df_first.append(X_first)
-        df_last = df_last.append(X_last)
-        df_first_early = df_first_early.append(X_first_early)
-        df_last_early = df_last_early.append(X_last_early)
-        df_min = df_min.append(X_min)
-        df_max = df_max.append(X_max)
-        df_sum = df_sum.append(X_sum)
+    # display the times selected for this icustay_id
+    print('\n\n TIMES FOR THIS ICUSTAY_ID \n\n')
+    display(HTML(df_time.loc[df_time['icustay_id']==iid].to_html().replace('NaN','')))
 
-    # update the column names
-    df_first.columns = [x + '_first' for x in df_first.columns]
-    df_last.columns = [x + '_last' for x in df_last.columns]
-    df_first_early.columns = [x + '_first' for x in df_first_early.columns]
-    df_last_early.columns = [x + '_last' for x in df_last_early.columns]
-    df_min.columns = [x + '_min' for x in df_min.columns]
-    df_max.columns = [x + '_max' for x in df_max.columns]
-    df_sum.columns = [x + '_sum' for x in df_sum.columns]
+    # merge df_time with df to filter down to a subset of rows
+    df = df.loc[df['icustay_id']==iid,:].merge(df_time, left_on=['icustay_id','hr'], right_on=['icustay_id','hr'],how='inner')
+    df = df.loc[df['early_flag']==0,:]
+    display(HTML(df.to_html().replace('NaN','')))
 
-    # now combine all the arrays together
-    df_data = pd.concat([df_first, df_first_early, df_last, df_last_early, df_min, df_max, df_sum], axis=1)
-    df_data
+    print('\n\nFIRST\n\n')
+    display(HTML(df_tmp.groupby('icustay_id')[var_first].first().to_html().replace('NaN','')))
+    print('\n\nLAST\n\n')
+    display(HTML(df_tmp.groupby('icustay_id')[var_first].last().to_html().replace('NaN','')))
 
-    return df_data
 
 def collapse_data(data):
     # this collapses a dictionary of dataframes into a single dataframe
