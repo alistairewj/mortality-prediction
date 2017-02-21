@@ -175,8 +175,8 @@ def get_design_matrix(df, time_dict, W=8, W_extra=24):
     df = df.merge(df_time, left_on=['icustay_id','hr'], right_on=['icustay_id','hr'],how='inner')
 
     # apply functions to groups of vars
-    df_first_early  = df.groupby('icustay_id')[var_first].first()
-    df_last_early   = df.groupby('icustay_id')[var_first].last()
+    df_first_early  = df.groupby('icustay_id')[var_first_early].first()
+    df_last_early   = df.groupby('icustay_id')[var_last_early].last()
 
 
     # slice down df_time by removing early times
@@ -184,10 +184,10 @@ def get_design_matrix(df, time_dict, W=8, W_extra=24):
     df = df.loc[df['early_flag']==0,:]
 
     df_first = df.groupby('icustay_id')[var_first].first()
-    df_last  = df.groupby('icustay_id')[var_first].last()
-    df_min = df.groupby('icustay_id')[var_first].min()
-    df_max = df.groupby('icustay_id')[var_first].max()
-    df_sum = df.groupby('icustay_id')[var_first].sum()
+    df_last  = df.groupby('icustay_id')[var_last].last()
+    df_min = df.groupby('icustay_id')[var_min].min()
+    df_max = df.groupby('icustay_id')[var_max].max()
+    df_sum = df.groupby('icustay_id')[var_sum].sum()
 
     # update the column names
     df_first.columns = [x + '_first' for x in df_first.columns]
