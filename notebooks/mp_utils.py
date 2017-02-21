@@ -34,7 +34,7 @@ def generate_times(df, T=4, T_to_death=None, seed=None):
     if T_to_death is not None:
         # fix the time for those who die to be T_to_death hours from death
         # first, isolate patients where they were in the ICU T hours before death
-        idxInICU = (df['deathtime_hours'] - df['deathtime_hours'])<T_to_death
+        idxInICU = (df['dischtime_hours'] - df['deathtime_hours'])<=T_to_death
         # for these patients, set the time to be T_to_death hours
         df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
 
@@ -362,6 +362,8 @@ def plot_vitals(df, iid, df_death=None):
         plt.plot( np.ones([2,])*df_death.loc[idx, 'dischtime_hours'].values, [0,200], 'k--', linewidth=2, label='Time of discharge' )
         if df_death.loc[idx,'deathtime_hours'] is not np.nan:
             plt.plot( np.ones([2,])*df_death.loc[idx, 'deathtime_hours'].values, [0,200], 'k-', linewidth=2, label='Time of death' )
+            plt.plot( np.ones([2,])*df_death.loc[idx, 'deathtime_hours'].values-24, [0,200], 'k:', linewidth=2, label='24 hr before death' )
+            plt.title('Died in hospital',fontsize=20)
         plt.xlim([-1, df_death.loc[idx, 'dischtime_hours'].values+6])
     plt.xlabel('Hours since ICU admission', fontsize=20)
     plt.ylabel('Vital sign value', fontsize=20)
