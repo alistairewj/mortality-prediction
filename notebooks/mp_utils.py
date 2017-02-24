@@ -7,6 +7,18 @@ import datetime as dt
 from sklearn import metrics
 import matplotlib.pyplot as plt
 
+# default colours for prettier plots
+col = [[0.9047, 0.1918, 0.1988],
+    [0.2941, 0.5447, 0.7494],
+    [0.3718, 0.7176, 0.3612],
+    [1.0000, 0.5482, 0.1000],
+    [0.4550, 0.4946, 0.4722],
+    [0.6859, 0.4035, 0.2412],
+    [0.9718, 0.5553, 0.7741],
+    [0.5313, 0.3359, 0.6523]];
+marker = ['v','o','d','^','s','o','+']
+ls = ['-','-','-','-','-','s','--','--']
+
 def generate_times(df, T=None, seed=None, censor=False):
     # generate a dictionary based off of the analysis type desired
     # creates "windowtime" - the time at the end of the window
@@ -431,6 +443,36 @@ def plot_vitals(df, iid, df_death=None, df_censor=None):
     plt.ylabel('Vital sign value', fontsize=20)
     plt.grid()
     plt.legend(loc='best')
+    plt.show()
+
+def plot_model_results(results, pretty_labels=None):
+    if pretty_labels is None:
+        pretty_labels = {'xgb': 'GB', 'rf': 'RF', 'logreg': 'LR', 'lasso': 'LASSO'}
+
+    # make sure pretty_labels has all model names as a key
+    for x in results.keys():
+        if x not in pretty_labels:
+            pretty_labels[x] = x
+    
+    plt.figure(figsize=[8,5])
+    for m, mdl in enumerate(results):
+        curr_score = results[mdl]
+        plt.plot(m*np.ones(len(curr_score)), curr_score,
+                marker=marker[m], color=col[m],
+                markersize=10, linewidth=2, linestyle=':',
+                label=pretty_labels[mdl])
+
+    plt.ylabel('AUROC',fontsize=18)
+    plt.xlim([-1,m+1])
+    plt.ylim([0.7,1.0])
+    plt.grid()
+    plt.gca().set_xticks(np.linspace(0,m,m+1))
+
+    plt.gca().set_xticklabels([pretty_labels[x] for x in results.keys()])
+    for tick in plt.gca().xaxis.get_major_ticks():
+        tick.label.set_fontsize(20)
+
+    plt.legend(loc='lower right',fontsize=18)
     plt.show()
 
 def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, diedWithin=None):
