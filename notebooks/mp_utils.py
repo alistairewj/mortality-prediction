@@ -347,7 +347,7 @@ def plot_xgb_importance_fmap(xgb_model, X_header=None, ax=None, height=0.2,
     ax.grid(grid)
     return ax
 
-def plot_vitals(df, iid, df_death=None):
+def plot_vitals(df, iid, df_death=None, df_censor=None):
     plt.figure(figsize=[14,10])
     idx = df['icustay_id']==iid
     plt.plot( df.loc[idx, 'hr'], df.loc[idx, 'heartrate'], 'ro-', label='Heart rate' )
@@ -365,6 +365,15 @@ def plot_vitals(df, iid, df_death=None):
             plt.plot( np.ones([2,])*df_death.loc[idx, 'deathtime_hours'].values-24, [0,200], 'k:', linewidth=2, label='24 hr before death' )
             plt.title('Died in hospital',fontsize=20)
         plt.xlim([-1, df_death.loc[idx, 'dischtime_hours'].values+6])
+
+
+    if df_censor is not None:
+        idx = df_censor['icustay_id']==iid
+        if np.any(idx):
+            plt.plot( np.ones([2,])*df_censor.loc[idx, 'censortime_hours'].values, [0,200],
+            'm--', alpha=0.8, linewidth=3, label='DNR' )
+
+
     plt.xlabel('Hours since ICU admission', fontsize=20)
     plt.ylabel('Vital sign value', fontsize=20)
     plt.grid()
