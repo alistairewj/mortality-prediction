@@ -7,9 +7,62 @@ import datetime as dt
 from sklearn import metrics
 import matplotlib.pyplot as plt
 
-def generate_times(df, T=4, T_to_death=None, seed=None):
+def generate_times(df, T=None, seed=None, censor=False):
     # generate a dictionary based off of the analysis type desired
     # creates "windowtime" - the time at the end of the window
+
+    # df needs to have the following fields:
+    #   icustay_id (not as an index)
+    #   dischtime_hours
+    #   deathtime_hours
+    #   censortime_hours (if censoring with censor=True)
+    # these times are relative to ICU intime ("_hours" means hours after ICU admit)
+    if seed is None:
+        print('Using default seed 111.')
+        seed=111
+
+    # create endtime: this is the last allowable time for our window
+    df['endtime'] = df['dischtime_hours']
+
+    # if they die before discharge, set the end time to the time of death
+    idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
+    df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
+
+    # optionally censor the data
+    # this involves updating the endtime to an even earlier time, if present
+    # e.g. the first time a patient was made DNR
+    if censor:
+        idx = (~df['censortime_hours'].isnull()) & (df['censortime_hours']<df['endtime'])
+        df.loc[idx,'endtime'] = df.loc[idx,'censortime_hours']
+
+    # now generate the end of the window
+    # this is X hours
+    np.random.seed(seed)
+    tau = np.random.rand(df.shape[0])
+    # T adds a bit of fuzziness to prevent information leakage
+    if T is not None:
+        # extract window at least T hours before discharge/death
+        df['windowtime'] = np.floor(tau*(df['endtime']-T))
+        # if the stay is shorter than T hours, the interval can be negative
+        # in this case, we set the interval to 0
+        # usually, this will mean we only have lab data
+        df.loc[df['windowtime']<0, 'windowtime'] = 0
+    else:
+        df['windowtime'] = np.floor(tau*(df['endtime']))
+
+    windowtime_dict = df.set_index('icustay_id')['windowtime'].to_dict()
+    return windowtime_dict
+
+
+def generate_times_before_death(df, T=4, T_to_death=None, seed=None):
+    # generate a dictionary based off of the analysis type desired
+    # creates "windowtime" - the time at the end of the window
+
+    # df needs to have the following fields:
+    #   icustay_id (not as an index)
+    #   dischtime_hours
+    #   deathtime_hours
+
     if seed is None:
         print('Using default seed 111.')
         seed=111
