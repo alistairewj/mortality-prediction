@@ -453,8 +453,8 @@ def plot_model_results(results, pretty_labels=None):
     for x in results.keys():
         if x not in pretty_labels:
             pretty_labels[x] = x
-    
-    plt.figure(figsize=[8,5])
+
+    plt.figure(figsize=[12,8])
     for m, mdl in enumerate(results):
         curr_score = results[mdl]
         plt.plot(m*np.ones(len(curr_score)), curr_score,
@@ -472,7 +472,10 @@ def plot_model_results(results, pretty_labels=None):
     for tick in plt.gca().xaxis.get_major_ticks():
         tick.label.set_fontsize(20)
 
-    plt.legend(loc='lower right',fontsize=18)
+    for tick in plt.gca().yaxis.get_major_ticks():
+        tick.label.set_fontsize(16)
+
+    #plt.legend(loc='lower right',fontsize=18)
     plt.show()
 
 def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, diedWithin=None):
