@@ -160,7 +160,19 @@ def vars_of_interest():
     # we have special rules for these...
     var_sum = ['urineoutput']
 
-    return var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early
+    var_static = [u'is_male', u'emergency_admission', u'age',
+               # services
+               u'service_any_noncard_surg',
+               u'service_any_card_surg',
+               u'service_cmed',
+               u'service_traum',
+               u'service_nmed',
+               # ethnicities
+               u'race_black',u'race_hispanic',u'race_asian',u'race_other',
+               # demographics
+               u'height', u'weight', u'bmi']
+
+    return var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early, var_static
 
 
 def vars_of_interest_streaming():
@@ -212,7 +224,7 @@ def get_design_matrix(df, time_dict, W=8, W_extra=24):
     #   5 loops, best of 3: 1.48 s per loop
 
     # get the hardcoded variable names
-    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early = vars_of_interest()
+    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early, var_static = vars_of_interest()
 
     tmp = np.asarray(time_dict.items()).astype(int)
     N = tmp.shape[0]
@@ -549,3 +561,24 @@ def load_design_matrix(co, df_additional_data=None, data_ext='', path=None, died
     X_header = [xval for x, xval in enumerate(df.columns) if x > 0]
 
     return X, y, X_header
+
+def get_predictions(df, df_static,  mdl, iid):
+    df = df.loc[df['icustay_id']==iid,:]
+    tm = df['hr'].values
+    prob = list()
+    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early, var_static = vars_of_interest()
+
+    for t in tm:
+        time_dict = {iid: t}
+        X = get_design_matrix(df, time_dict, W=4, W_extra=24)
+
+        # first, the data from static vars from df_static
+        X = X.merge(df_static.set_index('icustay_id')[var_static], how='left', left_index=True, right_index=True)
+
+        # convert to numpy data
+        X = X.values
+
+        curr_prob = mdl.predict_proba(X)
+        prob.append(curr_prob[0,1])
+
+    return tm, prob
