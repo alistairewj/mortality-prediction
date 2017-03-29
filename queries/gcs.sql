@@ -115,15 +115,53 @@ with base as
     and b.rn = b2.rn+1
     and b2.charttime > b.charttime - interval '6' hour
 )
-select gs.ICUSTAY_ID
+-- combine components with previous within 6 hours
+-- filter down to cohort which is not excluded
+-- truncate charttime to the hour
+, gcs_stg as
+(
+  select gs.icustay_id
+  , charttime
   , ceil(extract(EPOCH from gs.charttime-co.intime)/60.0/60.0)::smallint as hr
   , GCS
   , coalesce(GCSMotor,GCSMotorPrev) as GCSMotor
   , coalesce(GCSVerbal,GCSVerbalPrev) as GCSVerbal
   , coalesce(GCSEyes,GCSEyesPrev) as GCSEyes
+  , case when coalesce(GCSMotor,GCSMotorPrev) is null then 0 else 1 end
+  + case when coalesce(GCSVerbal,GCSVerbalPrev) is null then 0 else 1 end
+  + case when coalesce(GCSEyes,GCSEyesPrev) is null then 0 else 1 end
+    as components_measured
   , EndoTrachFlag as EndoTrachFlag
-from gcs gs
-inner join mp_cohort co
-  on gs.icustay_id = co.icustay_id
-  and co.excluded = 0
-ORDER BY gs.ICUSTAY_ID, gs.charttime;
+  from gcs gs
+  inner join mp_cohort co
+    on gs.icustay_id = co.icustay_id
+    and co.excluded = 0
+)
+-- priority is:
+--  (i) complete data, (ii) non-sedated GCS, (iii) lowest GCS, (iii) charttime
+, gcs_priority as
+(
+  select icustay_id
+    , hr
+    , GCS
+    , GCSMotor
+    , GCSVerbal
+    , GCSEyes
+    , EndoTrachFlag
+    , ROW_NUMBER() over
+      (
+        PARTITION BY icustay_id, hr
+        ORDER BY components_measured DESC, endotrachflag, gcs, charttime desc
+      ) as rn
+  from gcs_stg
+)
+select icustay_id
+  , hr
+  , GCS
+  , GCSMotor
+  , GCSVerbal
+  , GCSEyes
+  , EndoTrachFlag
+from gcs_priority gs
+where rn = 1
+ORDER BY icustay_id, hr;
