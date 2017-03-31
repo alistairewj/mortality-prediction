@@ -19,7 +19,7 @@ with vasocv1 as
 
     , max(case when itemid in (30044,30119,30309) and rate is not null then 1 else 0 end) as vaso_null
     , max(case
-            when itemid = 30044 and wd.weight is null then rate / 80.0
+            when itemid = 30044 and wd.weight is null then rate / 80.0 -- super rare to be missing weight... affects 2 patients for 14 rows
             when itemid = 30044 then rate / wd.weight -- measured in mcgmin
             when itemid in (30119,30309) then rate -- measured in mcgkgmin
             else null
