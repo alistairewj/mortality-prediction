@@ -165,7 +165,7 @@ FROM
 -- -- if you want to look at the results of the table before grouping:
 -- select
 --   icustay_id, charttime, vaso, vaso_rate, vaso_amount
---     , case when vaso_stopped = 1 then 'Y' else '' end as stopped
+--     , vaso_stopped
 --     , vaso_start
 --     , vaso_first
 --     , vaso_stop
@@ -176,7 +176,7 @@ FROM
 select
   icustay_id
   , charttime as starttime
-  , lead(charttime) OVER (partition by icustay_id, vaso_first) as endtime
+  , lead(charttime) OVER (partition by icustay_id, vaso_first order by charttime) as endtime
   , vaso, vaso_rate, vaso_amount, vaso_stop, vaso_start, vaso_first
 from vasocv6
 where
@@ -186,8 +186,8 @@ and
 and
   icustay_id is not null -- there are data for "floating" admissions, we don't worry about these
 )
--- final table of start/stop times for event
-, vasocv as
+-- table of start/stop times for event
+, vasocv8 as
 (
   select
     icustay_id
@@ -198,44 +198,68 @@ and
   and vaso_rate > 0
   and starttime != endtime
 )
+-- collapse these start/stop times down if the rate doesn't change
+, vasocv9 as
+(
+  select
+    icustay_id
+    , starttime, endtime
+    , case
+        when LAG(endtime) OVER (partition by icustay_id order by starttime, endtime) = starttime
+        AND  LAG(vaso_rate) OVER (partition by icustay_id order by starttime, endtime) = vaso_rate
+        THEN 0
+      else 1
+    end as vaso_groups
+    , vaso, vaso_rate, vaso_amount, vaso_stop, vaso_start, vaso_first
+  from vasocv8
+  where endtime is not null
+  and vaso_rate > 0
+  and starttime != endtime
+)
+, vasocv10 as
+(
+  select
+    icustay_id
+    , starttime, endtime
+    , vaso_groups
+    , SUM(vaso_groups) OVER (partition by icustay_id order by starttime, endtime) as vaso_groups_sum
+    , vaso, vaso_rate, vaso_amount, vaso_stop, vaso_start, vaso_first
+  from vasocv9
+)
+, vasocv as
+(
+  select icustay_id
+  , min(starttime) as starttime
+  , max(endtime) as endtime
+  , vaso_groups_sum
+  , vaso_rate
+  , sum(vaso_amount) as vaso_amount
+  from vasocv10
+  group by icustay_id, vaso_groups_sum, vaso_rate
+)
 -- now we extract the associated data for metavision patients
 , vasomv as
 (
   select
     icustay_id, linkorderid
     , max(rate) as vaso_rate
-    , min(starttime) as starttime, max(endtime) as endtime
+    , sum(amount) as vaso_amount
+    , min(starttime) as starttime
+    , max(endtime) as endtime
   from mimiciii.inputevents_mv
   where itemid = 221662 -- dopamine
   and statusdescription != 'Rewritten' -- only valid orders
   group by icustay_id, linkorderid
 )
-, co as
-(
-  select icustay_id
-  , intime, outtime
-  , generate_series
-  (
-    -- allow up to 24 hours before ICU admission (to grab labs before admit)
-    -24,
-    ceil(extract(EPOCH from outtime-intime)/60.0/60.0)::INTEGER
-  )*(interval '1' hour) + intime as charttime
-  from icustays
-)
 -- now assign this data to every hour of the patient's stay
-SELECT co.icustay_id
-  , co.charttime
-  , coalesce(max(case when vasocv.icustay_id is not null and vasomv.icustay_id is not null
-      then case when vasocv.vaso_rate > vasomv.vaso_rate then vasocv.vaso_rate
-            else vasomv.vaso_rate end
-      else coalesce(vasocv.vaso_rate, vasomv.vaso_rate)
-    end),0) as vaso_rate
-from co
-left join vasocv
-  on co.icustay_id = vasocv.icustay_id
-  and co.charttime between vasocv.starttime and vasocv.endtime
-left join vasomv
-  on co.icustay_id = vasomv.icustay_id
-  and co.charttime between vasomv.starttime and vasomv.endtime
-group by co.icustay_id, co.charttime
-order by co.icustay_id, co.charttime;
+-- vaso_amount for carevue is not accurate
+SELECT icustay_id
+  , starttime, endtime
+  , vaso_rate, vaso_amount
+from vasocv
+UNION
+SELECT icustay_id
+  , starttime, endtime
+  , vaso_rate, vaso_amount
+from vasomv
+order by icustay_id, starttime;
