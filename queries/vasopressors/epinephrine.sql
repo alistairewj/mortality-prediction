@@ -1,13 +1,15 @@
 -- This query extracts durations of epinephrine administration
 -- Total time on the drug can be calculated from this table by grouping using ICUSTAY_ID
 
+-- Requires the weightfirstday table
+
 DROP TABLE IF EXISTS mp_epinephrine;
 CREATE TABLE mp_epinephrine as
 -- Get drug administration data from CareVue first
 with vasocv1 as
 (
   select
-    icustay_id, charttime
+    cv.icustay_id, cv.charttime
     -- case statement determining whether the ITEMID is an instance of vasopressor usage
     , max(case when itemid in (30044,30119,30309) then 1 else 0 end) as vaso -- epinephrine
 
@@ -16,15 +18,24 @@ with vasocv1 as
           else 0 end) as vaso_stopped
 
     , max(case when itemid in (30044,30119,30309) and rate is not null then 1 else 0 end) as vaso_null
-    , max(case when itemid in (30044,30119,30309) then rate else null end) as vaso_rate
+    , max(case
+            when itemid = 30044 and wd.weight is null then rate / 80.0
+            when itemid = 30044 then rate / wd.weight -- measured in mcgmin
+            when itemid in (30119,30309) then rate -- measured in mcgkgmin
+            else null
+          end) as vaso_rate
     , max(case when itemid in (30044,30119,30309) then amount else null end) as vaso_amount
 
-  from mimiciii.inputevents_cv
+  from mimiciii.inputevents_cv cv
+  left join weightdurations wd
+    on cv.icustay_id = wd.icustay_id
+    and cv.charttime between wd.starttime and wd.endtime
   where itemid in
   (
         30044,30119,30309 -- epinephrine
   )
-  group by icustay_id, charttime
+  and cv.icustay_id is not null
+  group by cv.icustay_id, charttime
 )
 , vasocv2 as
 (

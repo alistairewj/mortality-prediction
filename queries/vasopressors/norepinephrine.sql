@@ -7,7 +7,7 @@ CREATE TABLE mp_norepinephrine as
 with vasocv1 as
 (
   select
-    icustay_id, charttime
+    cv.icustay_id, cv.charttime
     -- case statement determining whether the ITEMID is an instance of vasopressor usage
     , max(case when itemid in (30047,30120) then 1 else 0 end) as vaso -- norepinephrine
 
@@ -15,14 +15,23 @@ with vasocv1 as
     , max(case when itemid in (30047,30120)       and stopped in ('Stopped','D/C''d') then 1
           else 0 end) as vaso_stopped
 
+  -- case statement determining whether the ITEMID is an instance of vasopressor usage
+
     , max(case when itemid in (30047,30120) and rate is not null then 1 else 0 end) as vaso_null
-    , max(case when itemid in (30047,30120) then rate else null end) as vaso_rate
+    , max(case
+            when itemid = 30047 and wd.weight is null then rate / 80.0 -- this is rare, only affects a total of ~400 rows
+            when itemid = 30047 then rate / wd.weight -- measured in mcgmin
+            when itemid = 30120 then rate -- measured in mcgkgmin ** there are clear errors, perhaps actually mcgmin
+          else null end) as vaso_rate
     , max(case when itemid in (30047,30120) then amount else null end) as vaso_amount
 
-  from mimiciii.inputevents_cv
+  from mimiciii.inputevents_cv cv
+  left join weightdurations wd
+    on cv.icustay_id = wd.icustay_id
+    and cv.charttime between wd.starttime and wd.endtime
   where itemid in (30047,30120) -- norepinephrine
-  and icustay_id = 200059
-  group by icustay_id, charttime
+  and cv.icustay_id is not null
+  group by cv.icustay_id, cv.charttime
 )
 , vasocv2 as
 (
