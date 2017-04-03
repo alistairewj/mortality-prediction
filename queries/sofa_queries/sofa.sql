@@ -41,7 +41,7 @@ with co_stg as
   , outtime
   , generate_series
   (
-    0,
+    -24,
     ceil(extract(EPOCH from outtime-intime)/60.0/60.0)::INTEGER
   ) as hr
   from icustays
@@ -173,11 +173,11 @@ with co_stg as
   -- gcs
   , min(gcs.GCS) as GCS_min
   -- uo
-  , sum(uo.urineoutput) as urineoutput_sum
+  , sum(uo.urineoutput) as UrineOutput
   -- labs
-  , max(bilirubin) as bilirubin_max
-  , max(creatinine) as creatinine_max
-  , min(platelet) as platelet_min
+  , max(labs.bilirubin) as bilirubin_max
+  , max(labs.creatinine) as creatinine_max
+  , min(labs.platelet) as platelet_min
   from co
   left join bp
     on co.icustay_id = bp.icustay_id
@@ -213,7 +213,7 @@ with co_stg as
     , ma.MeanBP_min
     , ma.GCS_min
     -- uo
-    , ma.urineoutput_sum
+    , ma.urineoutput
     -- labs
     , ma.bilirubin_max
     , ma.creatinine_max
@@ -303,68 +303,89 @@ with co_stg as
   -- Renal failure - high creatinine or low urine output
   , case
     when (Creatinine_Max >= 5.0) then 4
-    when  UrineOutput_sum < 200 then 4
+    when
+      SUM(urineoutput) OVER (PARTITION BY icustay_id ORDER BY hr
+      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING) < 200
+        then 4
     when (Creatinine_Max >= 3.5 and Creatinine_Max < 5.0) then 3
-    when  UrineOutput_sum < 500 then 3
+    when
+      SUM(urineoutput) OVER (PARTITION BY icustay_id ORDER BY hr
+      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING) < 500
+        then 3
     when (Creatinine_Max >= 2.0 and Creatinine_Max < 3.5) then 2
     when (Creatinine_Max >= 1.2 and Creatinine_Max < 2.0) then 1
-    when coalesce(UrineOutput_sum, Creatinine_Max) is null then null
+    when coalesce
+      (
+        SUM(urineoutput) OVER (PARTITION BY icustay_id ORDER BY hr
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+        , Creatinine_Max
+      ) is null then null
   else 0 end
     as renal
   from scorecomp
 )
-select s.*
-  -- Combine all the scores to get SOFA
-  -- Impute 0 if the score is missing
- -- the window function takes the max over the last 24 hours
-  , coalesce(
-      MAX(respiration) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0) as respiration_24hours
-   , coalesce(
-       MAX(coagulation) OVER (PARTITION BY icustay_id ORDER BY HR
-       ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-      ,0) as coagulation_24hours
-  , coalesce(
-      MAX(liver) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0) as liver_24hours
-  , coalesce(
-      MAX(cardiovascular) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0) as cardiovascular_24hours
-  , coalesce(
-      MAX(cns) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0) as cns_24hours
-  , coalesce(
-      MAX(renal) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0) as renal_24hours
+, score_final as
+(
+  select s.*
+    -- Combine all the scores to get SOFA
+    -- Impute 0 if the score is missing
+   -- the window function takes the max over the last 24 hours
+    , coalesce(
+        MAX(respiration) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0) as respiration_24hours
+     , coalesce(
+         MAX(coagulation) OVER (PARTITION BY icustay_id ORDER BY HR
+         ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+        ,0) as coagulation_24hours
+    , coalesce(
+        MAX(liver) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0) as liver_24hours
+    , coalesce(
+        MAX(cardiovascular) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0) as cardiovascular_24hours
+    , coalesce(
+        MAX(cns) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0) as cns_24hours
+    , coalesce(
+        MAX(renal) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0) as renal_24hours
 
-  , coalesce(
-      MAX(respiration) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-   + coalesce(
-       MAX(coagulation) OVER (PARTITION BY icustay_id ORDER BY HR
-       ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-   + coalesce(
-      MAX(liver) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-   + coalesce(
-      MAX(cardiovascular) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-   + coalesce(
-      MAX(cns) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-   + coalesce(
-      MAX(renal) OVER (PARTITION BY icustay_id ORDER BY HR
-      ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
-    ,0)
-  as SOFA_24hours
-from scorecalc s;
+    , coalesce(
+        MAX(respiration) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+     + coalesce(
+         MAX(coagulation) OVER (PARTITION BY icustay_id ORDER BY HR
+         ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+     + coalesce(
+        MAX(liver) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+     + coalesce(
+        MAX(cardiovascular) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+     + coalesce(
+        MAX(cns) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+     + coalesce(
+        MAX(renal) OVER (PARTITION BY icustay_id ORDER BY HR
+        ROWS BETWEEN 24 PRECEDING AND 0 FOLLOWING)
+      ,0)
+    as SOFA_24hours
+  from scorecalc s
+)
+select * from score_final
+-- filter out all the rows before ICU admission that don't have any labs
+-- this leaves us with patient data like:
+-- 200001, hr=-12, MeanBP (is null), LAB_1, LAB_2
+-- 200001, hr=0, MeanBP, LAB_1, LAB_2
+-- ... rather than having a bunch of null rows from hr=-11 to hr=-1
+where (hr >= 0) OR (coalesce(bilirubin_max, creatinine_max, platelet_min) is not null);
