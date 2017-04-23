@@ -278,10 +278,13 @@ select
   -- looking at source code, it's count(icustay_id) > 1 for any hadm_id
   , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) = 1 then 1 else 0 end as inclusion_multiple_icustay
 
+  -- hoogendoorn2016prediction
+  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 and obs.iv_rate>0 then 1 else 0 end as inclusion_hoogendoorn2016_obs
+
   -- hug2009icu
   -- need 1 obs for HR/GCS/Hct/BUN, not NSICU/TSICU, first ICU stay, full code, not on dialysis
   -- *EXCLUDE* CRF
-  , case when obs.heartrate>0 or obs.gcs>0 or obs.hematocrit>0 or obs.bun>0 then 1 else 0 end as inclusion_hug2009_obs
+  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 then 1 else 0 end as inclusion_hug2009_obs
   , case when serv.service_NMED=1 or serv.service_NSURG=1 or serv.service_TSURG=1 then 0 else 1 end as inclusion_hug2009_proposed_service
   -- hug's thesis states the service exclusions are:
   --    Neurosurgery patients (NSICU Service)
@@ -318,7 +321,7 @@ select
   , case when obs.saps_vars > 0 then 1 else 0 end as inclusion_has_saps
 
   -- lee2017patient
-  -- must have obs
+  -- must have SAPS, so any of the below obs
   , case when obs.heartrate>0
            or obs.meanbp>0
            or obs.sysbp>0
