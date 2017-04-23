@@ -69,6 +69,7 @@ with ie_cv as
 
     -- blood gases
     , SUM(case when itemid = 50821 then 1 else 0 end) as PO2
+    , SUM(case when itemid = 50820 then 1 else 0 end) as PH
 
     --  SAPS-I labs !
     , SUM(CASE WHEN itemid in (
@@ -163,9 +164,11 @@ select
   , labs.BUN
   , labs.WBC
 
+  -- bgs
   , labs.po2
+  , labs.ph
 
-  -- both
+  -- both (may double count some observations)
   , chart.glucose + labs.GLUCOSE as glucose
 
   -- "any IV recording"

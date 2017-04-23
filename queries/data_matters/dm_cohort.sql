@@ -233,11 +233,23 @@ select
 
   -- now we have individual study exclusions
 
+  -- mimic-ii
+  , case when ie.dbsource = 'carevue' then 1 else 0 end as exclusion_only_mimicii
+
   -- calvert2016computational
   -- only alcoholic dependence patients
   , case when icd_alc.hadm_id is null then 1 else 0 end as exclusion_non_alc_icd9
-  -- TODO: >1 obs for all features: heart rate, pulse pressure, respiration rate, spo2, systolic blood pressure, temperature, wbc, pH
-
+  -- must have obs
+  , case when obs.heartrate>0
+          and obs.sysbp>0
+          and obs.meanbp>0
+          and obs.resprate>0
+          and obs.temp>0
+          and obs.spo2>0
+          and obs.gcs>0
+          and obs.WBC>0
+          and obs.ph>0
+        then 1 else 0 end as exclusion_calvert2016_obs
 
   -- celi2012database
   , case when icd_aki.hadm_id is null then 1 else 0 end as exclusion_non_aki_icd9
@@ -271,17 +283,44 @@ select
 
   -- lee2015customization
   -- Only MICU, SICU, CCU, CSRU, no missing data
+  -- for mimic-ii, use the charted service for consistency with prev studies
+  , case when ie.dbsource != 'metavision'
+          and (serv.medicine_chart=1 or serv.ccu_chart=1 or serv.surg_chart=1 or
+               serv.msicu_chart=1 or serv.csru_chart=1)
+              then 0
+        -- rest of mimic-ii patients are excluded
+        when ie.dbsource != 'metavision' then 1
+        when (serv.service_MED=1 or serv.service_PSURG=1 or serv.service_SURG=1 or
+              serv.service_CSURG=1 or serv.service_VSURG=1)
+            then 0
+        else 1 end
+      as exclusion_lee2015_service
 
   -- lee2015personalization
   -- "Only ICU stays with complete data"
+  -- they use SAPS-I vars, so we will enforce that (var is calculated later)
+  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_saps
 
   -- lee2017patient
-  -- Missing data, *included readmissions*
-
+  -- must have obs
+  , case when obs.heartrate>0
+          and obs.meanbp>0
+          and obs.sysbp>0
+          and obs.spo2>0
+          and obs.resprate>0
+          and obs.temp>0
+          and obs.hematocrit>0
+          and obs.WBC>0
+          and obs.glucose>0
+          and obs.bicarbonate>0
+          and obs.potassium>0
+          and obs.sodium>0
+          and obs.bun>0
+          and obs.creatinine>0
+        then 1 else 0 end as exclusion_lee2017_obs
 
   -- lehman2012risk
-  -- missing saps-i
-  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_saps
+  -- missing saps-i (see above, lee2015personalization)
 
   -- luo2016interpretable
   , case when ds.hadm_id is null then 1 else 0 end as exclusion_no_disch_summary
@@ -291,7 +330,7 @@ select
   -- luo2016predicting
   -- Subset of Joshi2012 with "one day length of time series data"
   -- Joshi2012 is Hug2009
-
+  -- We just apply >24hr + Hug's exclusions
 
   -- purushotham2017variational
   -- AHRF patients as in Khemani2009, split into 4 datasets based on age
@@ -301,10 +340,9 @@ select
   -- All patients met three of four diagnostic criteria for ALI (acute onset, PF ratio \300, and no left ventricular dysfunction).
   -- The presence of bilateral infiltrates on chest radiograph (fourth ALI criteria) was handled separately.
   -- Finally, all patients with an endotracheal tube leak greater than 20% were excluded.
-  
 
   -- ripoll2014sepsis
-  -- Missing data, only sepsis patients (sepsis not defined)
+  -- Missing data, only sepsis patients (sepsis not defined) - we'll use angus
 
   -- wojtusiak2017c
   -- Alive at hospital disch
@@ -334,4 +372,6 @@ left join fullcode
   on ie.icustay_id = fullcode.icustay_id
 left join dm_braindeath
   on ie.hadm_id = dm_braindeath.hadm_id
+left join dm_service serv
+  on ie.icustay_id = serv.icustay_id
 order by ie.icustay_id;
