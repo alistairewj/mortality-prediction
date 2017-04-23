@@ -239,7 +239,7 @@ select
     else 0 end as inclusion_stay_ge_48hr
   , case
       when (ce.outtime_hr-ce.intime_hr) < interval '500' hour then 1
-    else 0 end as inclusion_stay_lt_500hr
+    else 0 end as inclusion_stay_le_500hr
 
   -- mimic-ii
   , case when ie.dbsource = 'carevue' then 1 else 0 end as inclusion_only_mimicii
