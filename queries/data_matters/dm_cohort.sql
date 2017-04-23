@@ -28,6 +28,21 @@ where outtime is not null
   from noteevents
   where category = 'Discharge summary'
 )
+-- any non-full code status is excluded in hug 2009
+, fullcode as
+(
+
+  select
+      icustay_id
+    , max(FullCode) as fullcode
+    , max(case when CMO=1 or cmo_notes=1 then 1 else 0 end) as cmo
+    , max(DNR) as dnr
+    , max(DNI) as dni
+    , max(DNCPR) as dncpr
+  from mp_code_status
+  group by icustay_id
+)
+
 -- alcohol- use dependence related ICD-9
 -- (291.X, 291.XX, 303.XX,  357.5, 425.5, 535.3X, 571.2, and 571.3)
 -- ** paper says 305.XX but I'm sure it should be 305.0X
@@ -61,6 +76,13 @@ where outtime is not null
      icd9_code = '430'
      -- technically this is subdural and extradural too, not just SAH
   or icd9_code like '852%'
+)
+, icd_crf as
+(
+  select distinct hadm_id
+  from diagnoses_icd
+  where
+     icd9_code like '585%'
 )
 select
     ie.subject_id, ie.hadm_id, ie.icustay_id
@@ -233,14 +255,59 @@ select
   -- looking at source code, it's count(icustay_id) > 1 for any hadm_id
   , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) > 1 then 1 else 0 end as exclusion_multiple_icustay
 
+  -- hug2009icu
+  -- need 1 obs for HR/GCS/Hct/BUN, not NSICU/TSICU, first ICU stay, full code, not on dialysis
+  -- *EXCLUDE* CRF
+  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 then 0 else 1 end as exclusion_hug2009_obs
+  , case when service_NMED=1 or service_NSURG=1 or service_TSURG=1 then 1 else 0 end as exclusion_hug2009_proposed_service
+  -- hug's thesis states "Trauma patients (CSICU service)"
+  -- the below excl only works for carevue really, but we use the actual charted service here which is more consistent w/ old studies
+  , case when service_NMED=1 or service_NSURG=1 or service_TSURG=1 then 1 else 0 end as exclusion_hug2009_actual_service
+  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
+  , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 1 else 0 end as exclusion_not_full_code
+  , case when dm_braindeath.brain_death=1 then 1 else 0 end as exclusion_brain_death
+  , case when icd_crf.hadm_id is not null then 1 else 0 end as exclusion_crf
+
+
+  -- lee2015customization
+  -- Only MICU, SICU, CCU, CSRU, no missing data
+
+  -- lee2015personalization
+  -- "Only ICU stays with complete data"
+
+  -- lee2017patient
+  -- Missing data, *included readmissions*
+
+
   -- lehman2012risk
   -- missing saps-i
   , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_saps
-  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
 
   -- luo2016interpretable
   , case when ds.hadm_id is null then 1 else 0 end as exclusion_no_disch_summary
-  -- TODO: sapsii
+  -- SAPS-II uses pao2/fio2 instead of hct, and doesn't use resp rate.. so we just use the "does the pt have saps-i" var here
+  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_sapsii
+
+  -- luo2016predicting
+  -- Subset of Joshi2012 with "one day length of time series data"
+  -- Joshi2012 is Hug2009
+
+
+  -- purushotham2017variational
+  -- AHRF patients as in Khemani2009, split into 4 datasets based on age
+  -- From Khemani2009:
+  -- Patients were eligible if endotracheally intubated and mechanically ventilated, and at least one PF ratio was less than 300 within 24 h after intubation.
+  -- Patients were excluded for evidence of cardiac disease or incomplete ventilation data.
+  -- All patients met three of four diagnostic criteria for ALI (acute onset, PF ratio \300, and no left ventricular dysfunction).
+  -- The presence of bilateral infiltrates on chest radiograph (fourth ALI criteria) was handled separately.
+  -- Finally, all patients with an endotracheal tube leak greater than 20% were excluded.
+  
+
+  -- ripoll2014sepsis
+  -- Missing data, only sepsis patients (sepsis not defined)
+
+  -- wojtusiak2017c
+  -- Alive at hospital disch
 from icustays ie
 inner join admissions adm
   on ie.hadm_id = adm.hadm_id
@@ -263,4 +330,8 @@ left join ds
   on ie.hadm_id = ds.hadm_id
 left join dm_obs_count obs
   on ie.icustay_id = obs.icustay_id
+left join fullcode
+  on ie.icustay_id = fullcode.icustay_id
+left join dm_braindeath
+  on ie.hadm_id = dm_braindeath.hadm_id
 order by ie.icustay_id;

@@ -6,6 +6,8 @@ create table dm_obs_count as
 with ie_cv as
 (
   select icustay_id, count(*) as iv
+  -- only "MedEvents" (As was done in Hug 2009)
+  , count(rate) as iv_rate
   -- saps-I var  (urine output)
   , SUM (CASE WHEN ITEMID IN
       (
@@ -22,6 +24,7 @@ with ie_cv as
 , ie_mv as
 (
   select icustay_id, count(*) as iv
+  , count(rate) as iv_rate
   -- my replication of SAPS-I var in metavision (urine output)
   , SUM(CASE WHEN ITEMID IN
       (
@@ -64,6 +67,8 @@ with ie_cv as
     , SUM(CASE WHEN itemid = 51006 THEN 1 ELSE 0 END) as BUN
     , SUM(CASE WHEN itemid in (51300,51301) THEN 1 ELSE 0 END) as WBC
 
+    -- blood gases
+    , SUM(case when itemid = 50821 then 1 else 0 end) as PO2
 
     --  SAPS-I labs !
     , SUM(CASE WHEN itemid in (
@@ -158,11 +163,14 @@ select
   , labs.BUN
   , labs.WBC
 
+  , labs.po2
+
   -- both
   , chart.glucose + labs.GLUCOSE as glucose
-  
+
   -- "any IV recording"
   , coalesce(ie_cv.iv,0) + coalesce(ie_mv.iv,0) as iv
+  , coalesce(ie_cv.iv_rate,0) + coalesce(ie_mv.iv_rate,0) as iv_rate
 
   -- saps
   ,  coalesce(labs.saps_labs,0)
