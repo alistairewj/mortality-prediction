@@ -271,10 +271,13 @@ select
   -- need 1 obs for HR/GCS/Hct/BUN, not NSICU/TSICU, first ICU stay, full code, not on dialysis
   -- *EXCLUDE* CRF
   , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 then 0 else 1 end as exclusion_hug2009_obs
-  , case when service_NMED=1 or service_NSURG=1 or service_TSURG=1 then 1 else 0 end as exclusion_hug2009_proposed_service
-  -- hug's thesis states "Trauma patients (CSICU service)"
+  , case when serv.service_NMED=1 or serv.service_NSURG=1 or serv.service_TSURG=1 then 1 else 0 end as exclusion_hug2009_proposed_service
+  -- hug's thesis states the service exclusions are:
+  --    Neurosurgery patients (NSICU Service)
+  --    Trauma patients (CSICU service)
   -- the below excl only works for carevue really, but we use the actual charted service here which is more consistent w/ old studies
-  , case when service_NMED=1 or service_NSURG=1 or service_TSURG=1 then 1 else 0 end as exclusion_hug2009_actual_service
+  -- won't work for metavision though!
+  , case when cs.nsicu_chart=1 or cs.csicu_chart=1 then 1 else 0 end as exclusion_hug2009_actual_service
   , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
   , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 1 else 0 end as exclusion_not_full_code
   , case when dm_braindeath.brain_death=1 then 1 else 0 end as exclusion_brain_death

@@ -37,6 +37,11 @@ with serv as
   -- '',,
   -- 'TA','CFIRM','PCP',
   -- 'CE','MD','ICU','VU',
+
+  -- redundant services for a study's exclusion criteria
+  , max(case when ce.value = 'NSICU' then 1 else 0 end) as nsicu_chart
+  , max(case when ce.value = 'CSICU' then 1 else 0 end) as csicu_chart
+
   from chartevents ce
   where itemid in (1125,919,224640)
   group by ce.icustay_id
@@ -62,6 +67,10 @@ SELECT
   , cs.trauma_chart
   , cs.transplant_chart
 
+  -- redundant to above (supersetted by above)
+  , cs.nsicu_chart
+  , cs.csicu_chart
+  
   , serv.curr_service
   -- reference is MED
   -- excluding (due to low sample size): DENT, PSYCH, OBS
