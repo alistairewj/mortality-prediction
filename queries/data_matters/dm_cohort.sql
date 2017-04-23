@@ -1,21 +1,9 @@
 DROP TABLE IF EXISTS dm_cohort CASCADE;
 CREATE TABLE dm_cohort AS
-with ce as
-(
-  select icustay_id
-    , min(charttime) as intime_hr
-    , max(charttime) as outtime_hr
-  from chartevents ce
-  -- very loose join to admissions to ensure charttime is near patient admission
-  inner join admissions adm
-    on ce.hadm_id = adm.hadm_id
-    and ce.charttime between adm.admittime - interval '1' day and adm.dischtime + interval '1' day
-  where itemid in (211,220045)
-  group by icustay_id
-)
+
 -- tr.rn is the last unit the patient stayed in the hospital
 -- we join to tr to check if the last unit the patient stayed in was an icu
-, tr as
+with tr as
 (
 select hadm_id, icustay_id, intime, outtime, curr_careunit
 , ROW_NUMBER() over (partition by hadm_id order by intime desc) as rn
@@ -42,6 +30,18 @@ where outtime is not null
   from mp_code_status
   group by icustay_id
 )
+-- lowest pao2/fio2 for the first 4 days.. needed as an exclusion
+, bg4days as
+(
+  select ce.icustay_id
+    , min(PaO2FiO2Ratio) as pao2fio2ratio_min
+  from dm_intime_outtime ce
+  left join mp_bg_art
+    on ce.hadm_id = mp_bg_art.hadm_id
+    and ce.intime_hr <= mp_bg_art.charttime
+    and ce.outtime_hr >= mp_bg_art.charttime
+  group by ce.icustay_id
+)
 
 -- alcohol- use dependence related ICD-9
 -- (291.X, 291.XX, 303.XX,  357.5, 425.5, 535.3X, 571.2, and 571.3)
@@ -65,24 +65,27 @@ where outtime is not null
 (
   select distinct hadm_id
   from diagnoses_icd
-  where
-     icd9_code = '5849'
+  where icd9_code = '5849'
 )
 , icd_sah as
 (
   select distinct hadm_id
   from diagnoses_icd
-  where
-     icd9_code = '430'
+  where icd9_code = '430'
      -- technically this is subdural and extradural too, not just SAH
-  or icd9_code like '852%'
+     or icd9_code like '852%'
 )
 , icd_crf as
 (
   select distinct hadm_id
   from diagnoses_icd
-  where
-     icd9_code like '585%'
+  where icd9_code like '585%'
+)
+, icd_sepsis as
+(
+  select distinct hadm_id
+  from diagnoses_icd
+  where icd9_code in ('99592','78552')
 )
 select
     ie.subject_id, ie.hadm_id, ie.icustay_id
@@ -282,7 +285,8 @@ select
   , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 1 else 0 end as exclusion_not_full_code
   , case when dm_braindeath.brain_death=1 then 1 else 0 end as exclusion_brain_death
   , case when icd_crf.hadm_id is not null then 1 else 0 end as exclusion_crf
-
+  -- received dialysis in the first 24 hours
+  , case when dial.starttime < ie.intime_hr + interval '1' day then 1 else 0 end as exclusion_dialysis_first24hr
 
   -- lee2015customization
   -- Only MICU, SICU, CCU, CSRU, no missing data
@@ -335,18 +339,25 @@ select
   -- Joshi2012 is Hug2009
   -- We just apply >24hr + Hug's exclusions
 
-  -- purushotham2017variational
+  -- TODO: purushotham2017variational
+  -- two reasons why this is a challenge:
+  --  (1) a very atypical evaluation scheme and (2) very complex exclusion criteria
   -- AHRF patients as in Khemani2009, split into 4 datasets based on age
-  -- From Khemani2009:
-  -- Patients were eligible if endotracheally intubated and mechanically ventilated, and at least one PF ratio was less than 300 within 24 h after intubation.
-  -- Patients were excluded for evidence of cardiac disease or incomplete ventilation data.
-  -- All patients met three of four diagnostic criteria for ALI (acute onset, PF ratio \300, and no left ventricular dysfunction).
-  -- The presence of bilateral infiltrates on chest radiograph (fourth ALI criteria) was handled separately.
-  -- Finally, all patients with an endotracheal tube leak greater than 20% were excluded.
+  -- (1) Patients were eligible if endotracheally intubated and mechanically ventilated
+  -- , case when vdstart.starttime < ce.intime_hr + interval '4' day then 0 else 1 end as exclusion_not_vent_first96hr
+  -- (2) and at least one PF ratio was less than 300 within 24 h after intubation.
+  -- (3) Patients were excluded for evidence of cardiac disease
+  -- (4) incomplete ventilation data.
+  -- (5) All patients met three of four diagnostic criteria for ALI (acute onset, PF ratio \300, and no left ventricular dysfunction).
+  -- (6) The presence of bilateral infiltrates on chest radiograph (fourth ALI criteria) was handled separately.
+  -- (7) Finally, all patients with an endotracheal tube leak greater than 20% were excluded.
 
   -- ripoll2014sepsis
   -- Missing data, only sepsis patients (sepsis not defined) - we'll use angus
-
+  -- missing data == saps/sofa missing
+  -- sepsis == explicit coding
+  , case when icd_sepsis.hadm_id is null then 1 else 0 end as exclusion_not_explicit_sepsis
+  
   -- wojtusiak2017c
   -- Alive at hospital disch
 from icustays ie
@@ -354,7 +365,7 @@ inner join admissions adm
   on ie.hadm_id = adm.hadm_id
 inner join patients pat
   on ie.subject_id = pat.subject_id
-left join ce
+left join dm_intime_outtime ce
   on ie.icustay_id = ce.icustay_id
 left join tr
 	on ie.icustay_id = tr.icustay_id
@@ -365,6 +376,8 @@ left join icd_aki
   on ie.hadm_id = icd_aki.hadm_id
 left join icd_sah
   on ie.hadm_id = icd_sah.hadm_id
+left join icd_sepsis
+  on ie.hadm_id = icd_sepsis.hadm_id
 left join dm_word_count wc
   on ie.hadm_id = wc.hadm_id
 left join ds
@@ -377,4 +390,8 @@ left join dm_braindeath
   on ie.hadm_id = dm_braindeath.hadm_id
 left join dm_service serv
   on ie.icustay_id = serv.icustay_id
+left join dm_dialysis_start dial
+  on ie.icustay_id = dial.icustay_id
+left join (select icustay_id, min(starttime) as starttime from ventdurations vd group by icustay_id) vdstart
+  on ie.icustay_id = vdstart.icustay_id
 order by ie.icustay_id;
