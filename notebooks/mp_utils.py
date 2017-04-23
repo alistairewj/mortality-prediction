@@ -66,7 +66,7 @@ def generate_times(df, T=None, seed=None, censor=False):
     return windowtime_dict
 
 
-def generate_times_before_death(df, T=4, T_to_death=None, seed=None):
+def generate_times_before_death(df, T=None, T_to_death=None, seed=None):
     # generate a dictionary based off of the analysis type desired
     # creates "windowtime" - the time at the end of the window
 
@@ -95,6 +95,8 @@ def generate_times_before_death(df, T=4, T_to_death=None, seed=None):
         # if the stay is shorter than T hours, the interval can be negative
         # in this case, we set the interval to 0
         df.loc[df['windowtime']<0, 'windowtime'] = 0
+    else:
+        df['windowtime'] = np.floor(tau*(df['endtime']))
 
     if T_to_death is not None:
         # fix the time for those who die to be T_to_death hours from death
@@ -582,3 +584,32 @@ def get_predictions(df, df_static,  mdl, iid):
         prob.append(curr_prob[0,1])
 
     return tm, prob
+
+
+def get_data_at_time(df, df_static, iid, hour=0):
+    df = df.loc[df['icustay_id']==iid,:]
+    tm = df['hr'].values
+    var_min, var_max, var_first, var_last, var_sum, var_first_early, var_last_early, var_static = vars_of_interest()
+
+    idx = [i for i, tval in enumerate(tm) if tval==hour]
+    if len(idx)==0:
+        idx = [i for i,j in enumerate(tm) if i<hour]
+        if len(idx)==0:
+            idx = 0
+        else:
+            idx = idx[-1]
+        print('Hour not found! Using closest previous value: {}.'.format(tm[idx]))
+    else:
+        idx=idx[0]
+
+    t=tm[idx]
+    time_dict = {iid: t}
+    X = get_design_matrix(df, time_dict, W=4, W_extra=24)
+
+    # first, the data from static vars from df_static
+    X = X.merge(df_static.set_index('icustay_id')[var_static], how='left', left_index=True, right_index=True)
+
+    # convert to numpy data
+    X = X.values
+
+    return X
