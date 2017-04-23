@@ -260,8 +260,8 @@ select
         then 1 else 0 end as inclusion_calvert2016_obs
 
   -- celi2012database
-  , case when icd_aki.hadm_id is not null then 1 else 0 end as inclusion_non_aki_icd9
-  , case when icd_sah.hadm_id is not null then 1 else 0 end as inclusion_non_sah_icd9
+  , case when icd_aki.hadm_id is not null then 1 else 0 end as inclusion_aki_icd9
+  , case when icd_sah.hadm_id is not null then 1 else 0 end as inclusion_sah_icd9
 
   -- ghassemi2014unfolding
   , case when wc.non_stop_words >= 100 then 1 else 0 end as inclusion_ge_100_non_stop_words
