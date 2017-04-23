@@ -36,8 +36,10 @@ where outtime is not null
   select ce.icustay_id
     , min(PaO2FiO2Ratio) as pao2fio2ratio_min
   from dm_intime_outtime ce
+  inner join icustays ie
+    on ce.icustay_id = ie.icustay_id
   left join mp_bg_art
-    on ce.hadm_id = mp_bg_art.hadm_id
+    on ie.hadm_id = mp_bg_art.hadm_id
     and ce.intime_hr <= mp_bg_art.charttime
     and ce.outtime_hr >= mp_bg_art.charttime
   group by ce.icustay_id
@@ -280,17 +282,18 @@ select
   --    Trauma patients (CSICU service)
   -- the below excl only works for carevue really, but we use the actual charted service here which is more consistent w/ old studies
   -- won't work for metavision though!
-  , case when cs.nsicu_chart=1 or cs.csicu_chart=1 then 1 else 0 end as exclusion_hug2009_actual_service
+  , case when serv.nsicu_chart=1 or serv.csicu_chart=1 then 1 else 0 end as exclusion_hug2009_actual_service
   , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
   , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 1 else 0 end as exclusion_not_full_code
   , case when dm_braindeath.brain_death=1 then 1 else 0 end as exclusion_brain_death
   , case when icd_crf.hadm_id is not null then 1 else 0 end as exclusion_crf
   -- received dialysis in the first 24 hours
-  , case when dial.starttime < ie.intime_hr + interval '1' day then 1 else 0 end as exclusion_dialysis_first24hr
+  , case when dial.starttime < ce.intime_hr + interval '1' day then 1 else 0 end as exclusion_dialysis_first24hr
 
   -- lee2015customization
   -- Only MICU, SICU, CCU, CSRU, no missing data
   -- for mimic-ii, use the charted service for consistency with prev studies
+  -- .. with the caveat that "MICU" and "SICU" are not valid strings, so we approximate the meaning
   , case when ie.dbsource != 'metavision'
           and (serv.medicine_chart=1 or serv.ccu_chart=1 or serv.surg_chart=1 or
                serv.msicu_chart=1 or serv.csru_chart=1)
@@ -357,7 +360,7 @@ select
   -- missing data == saps/sofa missing
   -- sepsis == explicit coding
   , case when icd_sepsis.hadm_id is null then 1 else 0 end as exclusion_not_explicit_sepsis
-  
+
   -- wojtusiak2017c
   -- Alive at hospital disch
 from icustays ie
@@ -376,6 +379,8 @@ left join icd_aki
   on ie.hadm_id = icd_aki.hadm_id
 left join icd_sah
   on ie.hadm_id = icd_sah.hadm_id
+left join icd_crf
+  on ie.hadm_id = icd_crf.hadm_id
 left join icd_sepsis
   on ie.hadm_id = icd_sepsis.hadm_id
 left join dm_word_count wc
