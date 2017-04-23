@@ -239,56 +239,56 @@ select
   -- now we have individual study exclusions
 
   -- mimic-ii
-  , case when ie.dbsource = 'carevue' then 1 else 0 end as exclusion_only_mimicii
+  , case when ie.dbsource = 'carevue' then 1 else 0 end as inclusion_only_mimicii
 
   -- calvert2016computational
   -- only alcoholic dependence patients
-  , case when icd_alc.hadm_id is null then 1 else 0 end as exclusion_non_alc_icd9
+  , case when icd_alc.hadm_id is not null then 1 else 0 end as inclusion_non_alc_icd9
   -- must have obs
   , case when obs.heartrate>0
-          and obs.sysbp>0
-          and obs.meanbp>0
-          and obs.resprate>0
-          and obs.temp>0
-          and obs.spo2>0
-          and obs.gcs>0
-          and obs.WBC>0
-          and obs.ph>0
-        then 1 else 0 end as exclusion_calvert2016_obs
+           or obs.sysbp>0
+           or obs.meanbp>0
+           or obs.resprate>0
+           or obs.temp>0
+           or obs.spo2>0
+           or obs.gcs>0
+           or obs.WBC>0
+           or obs.ph>0
+        then 1 else 0 end as inclusion_calvert2016_obs
 
   -- celi2012database
-  , case when icd_aki.hadm_id is null then 1 else 0 end as exclusion_non_aki_icd9
-  , case when icd_sah.hadm_id is null then 1 else 0 end as exclusion_non_sah_icd9
+  , case when icd_aki.hadm_id is not null then 1 else 0 end as inclusion_non_aki_icd9
+  , case when icd_sah.hadm_id is not null then 1 else 0 end as inclusion_non_sah_icd9
 
   -- ghassemi2014unfolding
-  , case when wc.non_stop_words < 100 then 1 else 0 end as exclusion_lt_100_non_stop_words
+  , case when wc.non_stop_words >= 100 then 1 else 0 end as inclusion_ge_100_non_stop_words
 
   -- grnarova2016neural
   -- from paper: "... with only one hospital admission"
-  , case when count(ie.hadm_id) OVER (partition by ie.subject_id) > 1 then 1 else 0 end as exclusion_multiple_hadm
+  , case when count(ie.hadm_id) OVER (partition by ie.subject_id) = 1 then 1 else 0 end as inclusion_multiple_hadm
 
   -- harutyunyan2017multitask
   -- "excluded any hospital admission with multiple ICU stays or transfers between different ICU units or wards"
   -- looking at source code, it's count(icustay_id) > 1 for any hadm_id
-  , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) > 1 then 1 else 0 end as exclusion_multiple_icustay
+  , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) = 1 then 1 else 0 end as inclusion_multiple_icustay
 
   -- hug2009icu
   -- need 1 obs for HR/GCS/Hct/BUN, not NSICU/TSICU, first ICU stay, full code, not on dialysis
   -- *EXCLUDE* CRF
-  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 then 0 else 1 end as exclusion_hug2009_obs
-  , case when serv.service_NMED=1 or serv.service_NSURG=1 or serv.service_TSURG=1 then 1 else 0 end as exclusion_hug2009_proposed_service
+  , case when obs.heartrate>0 or obs.gcs>0 or obs.hematocrit>0 or obs.bun>0 then 1 else 0 end as inclusion_hug2009_obs
+  , case when serv.service_NMED=1 or serv.service_NSURG=1 or serv.service_TSURG=1 then 0 else 1 end as inclusion_hug2009_proposed_service
   -- hug's thesis states the service exclusions are:
   --    Neurosurgery patients (NSICU Service)
   --    Trauma patients (CSICU service)
   -- the below excl only works for carevue really, but we use the actual charted service here which is more consistent w/ old studies
   -- won't work for metavision though!
-  , case when serv.nsicu_chart=1 or serv.csicu_chart=1 then 1 else 0 end as exclusion_hug2009_actual_service
-  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
-  , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 1 else 0 end as exclusion_not_full_code
-  , case when dm_braindeath.brain_death=1 then 1 else 0 end as exclusion_brain_death
-  , case when icd_crf.hadm_id is not null then 1 else 0 end as exclusion_crf
+  , case when serv.nsicu_chart=1 or serv.csicu_chart=1 then 0 else 1 end as inclusion_hug2009_not_nsicu_csicu
+  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) = 1 then 1 else 0 end as inclusion_first_admission
+  , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 0 else 1 end as inclusion_full_code
+  , case when dm_braindeath.brain_death=1 then 0 else 1 end as inclusion_not_brain_death
+  , case when icd_crf.hadm_id is not null then 0 else 1 end as inclusion_not_crf
   -- received dialysis in the first 24 hours
-  , case when dial.starttime < ce.intime_hr + interval '1' day then 1 else 0 end as exclusion_dialysis_first24hr
+  , case when dial.starttime < ce.intime_hr + interval '1' day then 0 else 1 end as inclusion_no_dialysis_first24hr
 
   -- lee2015customization
   -- Only MICU, SICU, CCU, CSRU, no missing data
@@ -297,45 +297,45 @@ select
   , case when ie.dbsource != 'metavision'
           and (serv.medicine_chart=1 or serv.ccu_chart=1 or serv.surg_chart=1 or
                serv.msicu_chart=1 or serv.csru_chart=1)
-              then 0
+              then 1
         -- rest of mimic-ii patients are excluded
-        when ie.dbsource != 'metavision' then 1
+        when ie.dbsource != 'metavision' then 0
         when (serv.service_MED=1 or serv.service_PSURG=1 or serv.service_SURG=1 or
               serv.service_CSURG=1 or serv.service_VSURG=1)
-            then 0
-        else 1 end
-      as exclusion_lee2015_service
+            then 1
+        else 0 end
+      as inclusion_lee2015_service
 
   -- lee2015personalization
   -- "Only ICU stays with complete data"
   -- they use SAPS-I vars, so we will enforce that (var is calculated later)
-  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_saps
+  , case when obs.saps_vars > 0 then 1 else 0 end as inclusion_has_saps
 
   -- lee2017patient
   -- must have obs
   , case when obs.heartrate>0
-          and obs.meanbp>0
-          and obs.sysbp>0
-          and obs.spo2>0
-          and obs.resprate>0
-          and obs.temp>0
-          and obs.hematocrit>0
-          and obs.WBC>0
-          and obs.glucose>0
-          and obs.bicarbonate>0
-          and obs.potassium>0
-          and obs.sodium>0
-          and obs.bun>0
-          and obs.creatinine>0
-        then 1 else 0 end as exclusion_lee2017_obs
+           or obs.meanbp>0
+           or obs.sysbp>0
+           or obs.spo2>0
+           or obs.resprate>0
+           or obs.temp>0
+           or obs.hematocrit>0
+           or obs.WBC>0
+           or obs.glucose>0
+           or obs.bicarbonate>0
+           or obs.potassium>0
+           or obs.sodium>0
+           or obs.bun>0
+           or obs.creatinine>0
+        then 1 else 0 end as inclusion_lee2017_obs
 
   -- lehman2012risk
   -- missing saps-i (see above, lee2015personalization)
 
   -- luo2016interpretable
-  , case when ds.hadm_id is null then 1 else 0 end as exclusion_no_disch_summary
+  , case when ds.hadm_id is not null then 1 else 0 end as inclusion_no_disch_summary
   -- SAPS-II uses pao2/fio2 instead of hct, and doesn't use resp rate.. so we just use the "does the pt have saps-i" var here
-  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_sapsii
+  , case when obs.saps_vars > 0 then 1 else 0 end as inclusion_has_sapsii
 
   -- luo2016predicting
   -- Subset of Joshi2012 with "one day length of time series data"
@@ -359,7 +359,7 @@ select
   -- Missing data, only sepsis patients (sepsis not defined) - we'll use angus
   -- missing data == saps/sofa missing
   -- sepsis == explicit coding
-  , case when icd_sepsis.hadm_id is null then 1 else 0 end as exclusion_not_explicit_sepsis
+  , case when icd_sepsis.hadm_id is not null then 1 else 0 end as inclusion_not_explicit_sepsis
 
   -- wojtusiak2017c
   -- Alive at hospital disch
