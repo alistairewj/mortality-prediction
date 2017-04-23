@@ -182,16 +182,10 @@ select
   , extract(epoch from (adm.dischtime - adm.admittime))/60.0/60.0/24.0 as hosp_los
   , ceil(extract(epoch from (adm.deathtime - ce.intime_hr))/60.0/60.0) as deathtime_hours
 
-  -- exclusions
+  -- exclusions - these are applied for all cohorts
   , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 15
       then 1
     else 0 end as exclusion_over_15
-  , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 16
-      then 1
-    else 0 end as exclusion_over_16
-  , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 18
-      then 1
-    else 0 end as exclusion_over_18
   , case when adm.HAS_CHARTEVENTS_DATA = 0 then 1
          when ie.intime is null then 1
          when ie.outtime is null then 1
@@ -203,18 +197,6 @@ select
   , case
       when (ce.outtime_hr-ce.intime_hr) < interval '4' hour then 1
     else 0 end as exclusion_stay_lt_4hr
-  , case
-      when (ce.outtime_hr-ce.intime_hr) < interval '17' hour then 1
-    else 0 end as exclusion_stay_lt_17hr
-  , case
-      when (ce.outtime_hr-ce.intime_hr) < interval '24' hour then 1
-    else 0 end as exclusion_stay_lt_24hr
-  , case
-      when (ce.outtime_hr-ce.intime_hr) < interval '48' hour then 1
-    else 0 end as exclusion_stay_lt_48hr
-  , case
-      when (ce.outtime_hr-ce.intime_hr) > interval '500' hour then 1
-    else 0 end as exclusion_stay_gt_500hr
 
   -- organ donor accounts
   , case when (
@@ -236,7 +218,28 @@ select
       else 0 end
     as excluded
 
-  -- now we have individual study exclusions
+  -- now we have individual study *inclusions*
+  -- first some generic inclusions
+
+  , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) > 16
+      then 1
+    else 0 end as inclusion_over_16
+  , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) > 18
+      then 1
+    else 0 end as inclusion_over_18
+
+  , case
+      when (ce.outtime_hr-ce.intime_hr) >= interval '17' hour then 1
+    else 0 end as inclusion_stay_ge_17hr
+  , case
+      when (ce.outtime_hr-ce.intime_hr) >= interval '24' hour then 1
+    else 0 end as inclusion_stay_ge_24hr
+  , case
+      when (ce.outtime_hr-ce.intime_hr) >= interval '48' hour then 1
+    else 0 end as inclusion_stay_ge_48hr
+  , case
+      when (ce.outtime_hr-ce.intime_hr) < interval '500' hour then 1
+    else 0 end as inclusion_stay_lt_500hr
 
   -- mimic-ii
   , case when ie.dbsource = 'carevue' then 1 else 0 end as inclusion_only_mimicii
