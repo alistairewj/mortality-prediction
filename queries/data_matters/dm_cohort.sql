@@ -1,3 +1,6 @@
+to_tsvector
+
+
 DROP TABLE IF EXISTS dm_cohort CASCADE;
 CREATE TABLE dm_cohort AS
 with ce as
@@ -21,6 +24,46 @@ select hadm_id, icustay_id, intime, outtime, curr_careunit
 , ROW_NUMBER() over (partition by hadm_id order by intime desc) as rn
 from mimiciii.transfers
 where outtime is not null
+)
+, ds as
+(
+  select distinct hadm_id
+  from noteevents
+  where category = 'Discharge summary'
+)
+-- alcohol- use dependence related ICD-9
+-- (291.X, 291.XX, 303.XX,  357.5, 425.5, 535.3X, 571.2, and 571.3)
+-- ** paper says 305.XX but I'm sure it should be 305.0X
+, icd_alc as
+(
+  select distinct hadm_id
+  from diagnoses_icd
+  where
+     icd9_code like '291%'
+     -- this length() is needed, e.g. 3051 is tobacco use *not* alcohol
+  or (icd9_code like '303%' and length(icd9_code)=5)
+  or icd9_code like '3050%'
+  or icd9_code = '3575'
+  or icd9_code = '4255'
+  or icd9_code like '5353%'
+  or icd9_code = '5712'
+  or icd9_code = '5713'
+)
+, icd_aki as
+(
+  select distinct hadm_id
+  from diagnoses_icd
+  where
+     icd9_code = '5849'
+)
+, icd_sah as
+(
+  select distinct hadm_id
+  from diagnoses_icd
+  where
+     icd9_code = '430'
+     -- technically this is subdural and extradural too, not just SAH
+  or icd9_code like '852%'
 )
 select
     ie.subject_id, ie.hadm_id, ie.icustay_id
@@ -131,15 +174,23 @@ select
          when ce.intime_hr is null then 1
          when ce.outtime_hr is null then 1
       else 0 end as exclusion_valid_data
+
+  -- length of stay flags
   , case
-      when (ce.outtime_hr-ce.intime_hr) <= interval '4' hour then 1
+      when (ce.outtime_hr-ce.intime_hr) < interval '4' hour then 1
     else 0 end as exclusion_stay_lt_4hr
   , case
-      when (ce.outtime_hr-ce.intime_hr) <= interval '24' hour then 1
+      when (ce.outtime_hr-ce.intime_hr) < interval '17' hour then 1
+    else 0 end as exclusion_stay_lt_17hr
+  , case
+      when (ce.outtime_hr-ce.intime_hr) < interval '24' hour then 1
     else 0 end as exclusion_stay_lt_24hr
   , case
-      when (ce.outtime_hr-ce.intime_hr) <= interval '48' hour then 1
+      when (ce.outtime_hr-ce.intime_hr) < interval '48' hour then 1
     else 0 end as exclusion_stay_lt_48hr
+  , case
+      when (ce.outtime_hr-ce.intime_hr) > interval '500' hour then 1
+    else 0 end as exclusion_stay_gt_500hr
 
   -- organ donor accounts
   , case when (
@@ -160,6 +211,39 @@ select
          when lower(diagnosis) like '%donor account%' and deathtime is not null then 1
       else 0 end
     as excluded
+
+  -- now we have individual study exclusions
+
+  -- calvert2016computational
+  -- only alcoholic dependence patients
+  , case when icd_alc.hadm_id is null then 1 else 0 end as exclusion_non_alc_icd9
+  -- TODO: >1 obs for all features: heart rate, pulse pressure, respiration rate, spo2, systolic blood pressure, temperature, wbc, pH
+
+
+  -- celi2012database
+  , case when icd_aki.hadm_id is null then 1 else 0 end as exclusion_non_aki_icd9
+  , case when icd_sah.hadm_id is null then 1 else 0 end as exclusion_non_sah_icd9
+
+  -- ghassemi2014unfolding
+  , case when wc.non_stop_words < 100 then 1 else 0 end as exclusion_lt_100_non_stop_words
+
+  -- grnarova2016neural
+  -- from paper: "... with only one hospital admission"
+  , case when count(ie.hadm_id) OVER (partition by ie.subject_id) > 1 then 1 else 0 end as exclusion_multiple_hadm
+
+  -- harutyunyan2017multitask
+  -- "excluded any hospital admission with multiple ICU stays or transfers between different ICU units or wards"
+  -- looking at source code, it's count(icustay_id) > 1 for any hadm_id
+  , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) > 1 then 1 else 0 end as exclusion_multiple_icustay
+
+  -- lehman2012risk
+  -- missing saps-i
+  , case when obs.saps_vars > 0 then 0 else 1 end as exclusion_has_saps
+  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) > 1 then 1 else 0 end as exclusion_readmission
+
+  -- luo2016interpretable
+  , case when ds.hadm_id is null then 1 else 0 end as exclusion_no_disch_summary
+  -- TODO: sapsii
 from icustays ie
 inner join admissions adm
   on ie.hadm_id = adm.hadm_id
@@ -170,4 +254,16 @@ left join ce
 left join tr
 	on ie.icustay_id = tr.icustay_id
 	and tr.rn = 1
+left join icd_alc
+  on ie.hadm_id = icd_alc.hadm_id
+left join icd_aki
+  on ie.hadm_id = icd_aki.hadm_id
+left join icd_sah
+  on ie.hadm_id = icd_sah.hadm_id
+left join dm_word_count wc
+  on ie.hadm_id = wc.hadm_id
+left join ds
+  on ie.hadm_id = ds.hadm_id
+left join dm_obs_count obs
+  on ie.icustay_id = obs.icustay_id
 order by ie.icustay_id;
