@@ -32,9 +32,9 @@ with t1 as
   -- in MetaVision, these ITEMIDs never appear with a null rate
   -- so it is sufficient to check the rate is > 100
     (
-      (mv.rateuom = 'mL/hour' and mv.rate > 100)
-      OR (mv.rateuom = 'mL/min' and mv.rate > (100/60.0))
-      OR (mv.rateuom = 'mL/kg/hour' and (mv.rate*mv.patientweight) > 100)
+      (mv.rateuom = 'mL/hour' and mv.rate > 99)
+      OR (mv.rateuom = 'mL/min' and mv.rate > (99/60.0))
+      OR (mv.rateuom = 'mL/kg/hour' and (mv.rate*mv.patientweight) > 99)
     )
 )
 , t2 as
@@ -50,30 +50,29 @@ with t1 as
   and cv.itemid in
   (
    30008 --	Albumin 5%
-  ,30009 --	Albumin 25%
-  ,42832 --	albumin 12.5%
+  ,30181 -- Serum Albumin 5%
   ,40548 --	ALBUMIN
   ,45403 --	albumin
-  ,44203 --	Albumin 12.5%
-  ,30181 -- Serum Albumin 5%
   ,46564 -- Albumin
+  ,44203 --	Albumin 12.5%
+  ,42832 --	albumin 12.5%
   ,43237 -- 25% Albumin
   ,43353 -- Albumin (human) 25%
+  ,30009 --	Albumin 25%
 
   ,30012 --	Hespan
   ,46313 --	6% Hespan
 
+  ,30011 -- Dextran 40
+  ,40033 --	DEXTRAN
+  ,42731 -- Dextran40 10%
   ,42975 --	DEXTRAN DRIP
   ,42944 --	dextran
   ,46336 --	10% Dextran 40/D5W
   ,46729 --	Dextran
-  ,40033 --	DEXTRAN
   ,45410 --	10% Dextran 40
-  ,30011 -- Dextran 40
-  ,30016 -- Dextrose 10%
-  ,42731 -- Dextran40 10%
   )
-  where cv.amount > 100
+  where cv.amount > 99
   and cv.amount < 2000
 )
 -- some colloids are charted in chartevents
@@ -96,7 +95,7 @@ with t1 as
     , 3088 --	DEXTRAN 40%
   )
   where ce.valuenum is not null
-  and ce.valuenum > 100
+  and ce.valuenum > 99
   and ce.valuenum < 2000
 )
 select
@@ -105,7 +104,7 @@ select
   , sum(amount) as colloid_bolus
 from t1
 -- just because the rate was high enough, does *not* mean the final amount was
-where amount > 100
+where amount > 99
 group by t1.icustay_id, t1.hr
 UNION
 select
