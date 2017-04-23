@@ -152,6 +152,7 @@ where bg.lastRowSpO2 = 1 -- only the row with the most recent SpO2 (if no SpO2 f
 
 select
   stg3.hadm_id
+  , stg3.charttime
   , stg3.hr
   , SPECIMEN -- raw data indicating sample type, only present 80% of the time
   -- prediction of specimen for missing data
