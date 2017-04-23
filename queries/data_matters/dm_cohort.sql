@@ -266,6 +266,9 @@ select
   -- ghassemi2014unfolding
   , case when wc.non_stop_words >= 100 then 1 else 0 end as inclusion_ge_100_non_stop_words
 
+  -- ghassemi2015multivariate
+  , case when dm_nn.number_of_notes > 6 then 1 else 0 end as inclusion_gt_6_notes
+
   -- grnarova2016neural
   -- from paper: "... with only one hospital admission"
   , case when count(ie.hadm_id) OVER (partition by ie.subject_id) = 1 then 1 else 0 end as inclusion_multiple_hadm
@@ -388,6 +391,8 @@ left join icd_sepsis
   on ie.hadm_id = icd_sepsis.hadm_id
 left join dm_word_count wc
   on ie.hadm_id = wc.hadm_id
+left join dm_number_of_notes dm_nn
+  on ie.hadm_id = dm_nn.hadm_id
 left join ds
   on ie.hadm_id = ds.hadm_id
 left join dm_obs_count obs
