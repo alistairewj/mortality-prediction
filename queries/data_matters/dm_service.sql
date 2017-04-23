@@ -68,6 +68,7 @@ SELECT
   , cs.transplant_chart
 
   -- redundant to above (supersetted by above)
+  -- used for some exclusions to precisely reproduce their criteria
   , cs.nsicu_chart
   , cs.csicu_chart
   
