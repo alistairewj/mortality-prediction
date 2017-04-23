@@ -1,6 +1,3 @@
-to_tsvector
-
-
 DROP TABLE IF EXISTS dm_cohort CASCADE;
 CREATE TABLE dm_cohort AS
 with ce as
