@@ -279,12 +279,12 @@ select
   , case when count(ie.icustay_id) OVER (partition by ie.hadm_id) = 1 then 1 else 0 end as inclusion_multiple_icustay
 
   -- hoogendoorn2016prediction
-  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 and obs.iv_rate>0 then 1 else 0 end as inclusion_hoogendoorn2016_obs
+  -- obs requirement as hug (below)
 
   -- hug2009icu
   -- need 1 obs for HR/GCS/Hct/BUN, not NSICU/TSICU, first ICU stay, full code, not on dialysis
   -- *EXCLUDE* CRF
-  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 then 1 else 0 end as inclusion_hug2009_obs
+  , case when obs.heartrate>0 and obs.gcs>0 and obs.hematocrit>0 and obs.bun>0 and obs.iv_rate>0 then 1 else 0 end as inclusion_hug2009_obs
   , case when serv.service_NMED=1 or serv.service_NSURG=1 or serv.service_TSURG=1 then 0 else 1 end as inclusion_hug2009_proposed_service
   -- hug's thesis states the service exclusions are:
   --    Neurosurgery patients (NSICU Service)
@@ -321,22 +321,7 @@ select
   , case when obs.saps_vars > 0 then 1 else 0 end as inclusion_has_saps
 
   -- lee2017patient
-  -- must have SAPS, so any of the below obs
-  , case when obs.heartrate>0
-           or obs.meanbp>0
-           or obs.sysbp>0
-           or obs.spo2>0
-           or obs.resprate>0
-           or obs.temp>0
-           or obs.hematocrit>0
-           or obs.WBC>0
-           or obs.glucose>0
-           or obs.bicarbonate>0
-           or obs.potassium>0
-           or obs.sodium>0
-           or obs.bun>0
-           or obs.creatinine>0
-        then 1 else 0 end as inclusion_lee2017_obs
+  -- must have SAPS, so above works
 
   -- lehman2012risk
   -- missing saps-i (see above, lee2015personalization)
