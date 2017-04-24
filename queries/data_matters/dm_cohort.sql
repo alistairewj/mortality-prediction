@@ -241,6 +241,8 @@ select
       when (ce.outtime_hr-ce.intime_hr) < interval '500' hour then 1
     else 0 end as inclusion_stay_le_500hr
 
+  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) = 1 then 1 else 0 end as inclusion_first_admission
+
   -- mimic-ii
   , case when ie.dbsource = 'carevue' then 1 else 0 end as inclusion_only_mimicii
 
@@ -292,7 +294,6 @@ select
   -- the below excl only works for carevue really, but we use the actual charted service here which is more consistent w/ old studies
   -- won't work for metavision though!
   , case when serv.nsicu_chart=1 or serv.csicu_chart=1 then 0 else 1 end as inclusion_hug2009_not_nsicu_csicu
-  , case when ROW_NUMBER() OVER (partition by ie.hadm_id order by ie.intime) = 1 then 1 else 0 end as inclusion_first_admission
   , case when cmo=1 or dnr=1 or dni=1 or dncpr=1 then 0 else 1 end as inclusion_full_code
   , case when dm_braindeath.brain_death=1 then 0 else 1 end as inclusion_not_brain_death
   , case when icd_crf.hadm_id is not null then 0 else 1 end as inclusion_not_crf
@@ -324,7 +325,7 @@ select
   -- must have SAPS, so above works
 
   -- lehman2012risk
-  -- missing saps-i (see above, lee2015personalization)
+  -- missing saps-i (see above)
 
   -- luo2016interpretable
   , case when ds.hadm_id is not null then 1 else 0 end as inclusion_no_disch_summary
@@ -350,13 +351,19 @@ select
   -- (7) Finally, all patients with an endotracheal tube leak greater than 20% were excluded.
 
   -- ripoll2014sepsis
-  -- Missing data, only sepsis patients (sepsis not defined) - we'll use angus
+  -- Missing data, only sepsis patients (sepsis not defined) - we'll use explicit
   -- missing data == saps/sofa missing
   -- sepsis == explicit coding
   , case when icd_sepsis.hadm_id is not null then 1 else 0 end as inclusion_not_explicit_sepsis
 
   -- wojtusiak2017c
   -- Alive at hospital disch
+  -- >65
+  , case when adm.hospital_expire_flag = 0 then 1 else 0 end as inclusion_alive_hos_disch
+  , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) > 65
+      then 1
+    else 0 end as inclusion_over_65
+
 from icustays ie
 inner join admissions adm
   on ie.hadm_id = adm.hadm_id
