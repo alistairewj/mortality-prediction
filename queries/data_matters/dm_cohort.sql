@@ -78,8 +78,7 @@ where outtime is not null
  -- 852 includes is subdural and extradural too, not just SAH
  -- also 852 is *not* a code on its own
  -- if we include 852*, then we obtain a much larger cohort than the authors report
- -- therefore we choose to exclude all 852
-  --or icd9_code like '852%'
+    or icd9_code like '852%'
 )
 , icd_crf as
 (
@@ -93,6 +92,17 @@ where outtime is not null
   from diagnoses_icd
   where icd9_code in ('99592','78552')
 )
+, cs as
+(
+  -- min code status
+    select ce.icustay_id, min(cs.charttime) as censortime
+    , ceil(extract(epoch from min(cs.charttime-ce.intime_hr) )/60.0/60.0) as censortime_hours
+    from dm_intime_outtime ce
+    inner join mp_code_status cs
+    on ce.icustay_id = cs.icustay_id
+    where (cmo+dnr+dni+dncpr+cmo_notes)>0
+    group by ce.icustay_id
+)
 select
     ie.subject_id, ie.hadm_id, ie.icustay_id
   , ce.intime_hr as intime
@@ -101,7 +111,17 @@ select
   , pat.gender
   , adm.ethnicity
 
-  -- outcomes
+  -- times
+  , ceil(extract(epoch from (ce.outtime_hr- ce.intime_hr))/60.0/60.0) as dischtime_hours
+  , ceil(extract(epoch from (adm.deathtime - ce.intime_hr))/60.0/60.0) as deathtime_hours
+  , cs.censortime_hours
+
+
+  -- other outcomes
+  , ie.los as icu_los
+  , extract(epoch from (adm.dischtime - adm.admittime))/60.0/60.0/24.0 as hosp_los
+
+  -- mortality outcomes
   -- 48 post ICU admission -- TODO: check ~1700 pts die after other exclusions
   , case
       when adm.deathtime is not null and adm.deathtime <= ce.intime_hr + interval '48' hour
@@ -181,11 +201,6 @@ select
   -- this isn't used in any study ... but is the more usual definition of 30-day mort, centered on *hospital admission*
   , case when pat.dod <= adm.admittime + interval '30' day then 1 else 0 end
       as death_30dy_post_hos_admit
-
-  -- other outcomes
-  , ie.los as icu_los
-  , extract(epoch from (adm.dischtime - adm.admittime))/60.0/60.0/24.0 as hosp_los
-  , ceil(extract(epoch from (adm.deathtime - ce.intime_hr))/60.0/60.0) as deathtime_hours
 
   -- exclusions - these are applied for all cohorts
   , case when round((cast(adm.admittime as date) - cast(pat.dob as date)) / 365.242, 4) <= 15
@@ -413,4 +428,6 @@ left join dm_dialysis_start dial
   on ie.icustay_id = dial.icustay_id
 left join (select icustay_id, min(starttime) as starttime from ventdurations vd group by icustay_id) vdstart
   on ie.icustay_id = vdstart.icustay_id
+left join cs
+  on ie.icustay_id = cs.icustay_id
 order by ie.icustay_id;
