@@ -67,15 +67,18 @@ where outtime is not null
 (
   select distinct hadm_id
   from diagnoses_icd
-  where icd9_code = '5849'
+  where seq_num = 1
+    and icd9_code = '5849'
 )
 , icd_sah as
 (
   select distinct hadm_id
   from diagnoses_icd
-  where icd9_code = '430'
-     -- technically this is subdural and extradural too, not just SAH
-     or icd9_code like '852%'
+  where seq_num = 1
+    and (icd9_code = '430'
+     -- the original study just specifies "852"
+     -- 852 includes is subdural and extradural too, not just SAH
+    or icd9_code like '852%')
 )
 , icd_crf as
 (
@@ -111,7 +114,8 @@ select
       else 0
     end as death_icu
   -- in hospital
-  , adm.HOSPITAL_EXPIRE_FLAG
+  , adm.HOSPITAL_EXPIRE_FLAG -- keeping this temporarily before refactor
+  , adm.HOSPITAL_EXPIRE_FLAG as death_in_hospital
   -- 30-day post ICU admission
   , case
       -- died in hospital
@@ -229,6 +233,9 @@ select
     else 0 end as inclusion_over_18
 
   , case
+      when (ce.outtime_hr-ce.intime_hr) >= interval '12' hour then 1
+    else 0 end as inclusion_stay_ge_12hr
+  , case
       when (ce.outtime_hr-ce.intime_hr) >= interval '17' hour then 1
     else 0 end as inclusion_stay_ge_17hr
   , case
@@ -246,6 +253,9 @@ select
   -- mimic-ii
   , case when ie.dbsource = 'carevue' then 1 else 0 end as inclusion_only_mimicii
 
+  -- calvert2016using
+  -- *in* the MICU (no mention of service), so we use careunit
+  , case when ie.first_careunit = 'MICU' then 1 else 0 end as inclusion_only_micu
   -- calvert2016computational
   -- only alcoholic dependence patients
   , case when icd_alc.hadm_id is not null then 1 else 0 end as inclusion_non_alc_icd9
