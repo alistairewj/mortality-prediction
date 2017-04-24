@@ -67,18 +67,19 @@ where outtime is not null
 (
   select distinct hadm_id
   from diagnoses_icd
-  where seq_num = 1
-    and icd9_code = '5849'
+  where icd9_code = '5849'
 )
 , icd_sah as
 (
   select distinct hadm_id
   from diagnoses_icd
-  where seq_num = 1
-    and (icd9_code = '430'
-     -- the original study just specifies "852"
-     -- 852 includes is subdural and extradural too, not just SAH
-    or icd9_code like '852%')
+  where icd9_code = '430'
+ -- the original study just specifies "852"
+ -- 852 includes is subdural and extradural too, not just SAH
+ -- also 852 is *not* a code on its own
+ -- if we include 852*, then we obtain a much larger cohort than the authors report
+ -- therefore we choose to exclude all 852
+  --or icd9_code like '852%'
 )
 , icd_crf as
 (
