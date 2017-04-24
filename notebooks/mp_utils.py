@@ -199,9 +199,9 @@ def vars_of_interest_streaming():
             'bg_fio2', 'bg_aado2', 'bg_pao2fio2', 'bg_ph', 'bg_baseexcess', 'bg_bicarbonate',
             'bg_totalco2', 'bg_hematocrit', 'bg_hemoglobin', 'bg_carboxyhemoglobin', 'bg_methemoglobin',
             'bg_chloride', 'bg_calcium', 'bg_temperature', 'bg_potassium', 'bg_sodium', 'bg_lactate',
-            'bg_glucose', 'bg_tidalvolume',
+            'bg_glucose',
             # 'bg_intubated', 'bg_ventilationrate', 'bg_ventilator', # these vars are usually NaN
-            'bg_peep', 'bg_o2flow', 'bg_requiredo2',
+            # 'bg_tidalvolume', 'bg_peep', 'bg_o2flow', 'bg_requiredo2',
             # begin lab values
             'aniongap', 'albumin', 'bands', 'bicarbonate', 'bilirubin', 'creatinine',
             'chloride', 'glucose', 'hematocrit', 'hemoglobin', 'lactate', 'platelet',
