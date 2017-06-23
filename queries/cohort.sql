@@ -2,12 +2,20 @@ DROP TABLE IF EXISTS mp_cohort CASCADE;
 CREATE TABLE mp_cohort AS
 with ce as
 (
-  select icustay_id
-    , min(charttime) as intime_hr
-    , max(charttime) as outtime_hr
-  from chartevents
+  -- adjust the intime to be based on the heart rate
+  -- this handles some fuzziness associated with administrative intime/outtime
+  select ce.icustay_id
+    -- we ceiling this to the nearest hour
+    -- we do this by adding 59 minutes then truncating
+    , date_trunc('hour',min(charttime) + interval '59' minute) as intime_hr
+    , date_trunc('hour',max(charttime) + interval '59' minute) as outtime_hr
+  from chartevents ce
+  inner join icustays ie
+    on ce.icustay_id = ie.icustay_id
+    and ce.charttime > ie.intime - interval '12' hour
+    and ce.charttime < ie.outtime + interval '12' hour
   where itemid in (211,220045)
-  group by icustay_id
+  group by ce.icustay_id
 )
 select
     ie.subject_id, ie.hadm_id, ie.icustay_id
@@ -36,7 +44,7 @@ select
 , case
     when (ce.outtime_hr-ce.intime_hr) <= interval '4' hour then 1
   else 0 end as exclusion_short_stay
-  
+
 -- organ donor accounts
 , case when (
        (lower(diagnosis) like '%organ donor%' and deathtime is not null)
