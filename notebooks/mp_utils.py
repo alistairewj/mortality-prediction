@@ -271,8 +271,8 @@ def get_design_matrix(df, time_dict, W=8, W_extra=24):
     # update the column names
     df_first.columns = [x + '_first' for x in df_first.columns]
     df_last.columns = [x + '_last' for x in df_last.columns]
-    df_first_early.columns = [x + '_first' for x in df_first_early.columns]
-    df_last_early.columns = [x + '_last' for x in df_last_early.columns]
+    df_first_early.columns = [x + '_first_early' for x in df_first_early.columns]
+    df_last_early.columns = [x + '_last_early' for x in df_last_early.columns]
     df_min.columns = [x + '_min' for x in df_min.columns]
     df_max.columns = [x + '_max' for x in df_max.columns]
     df_sum.columns = [x + '_sum' for x in df_sum.columns]
