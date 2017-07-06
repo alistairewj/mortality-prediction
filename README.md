@@ -1,3 +1,8 @@
+# *** DRAFT! ***
+
+This repository is still very unclean and not ready for public use. Please do feel free to check out code - just note that I plan to clean a lot of it up in the near future and make the code actually executable end to end!
+
+
 # Mortality prediction
 
 This repository contains a variety of notebooks which qualitatively and quantitatively evaluate the performance of a real time mortality prediction system developed using data from the MIMIC-III clinical database.
