@@ -4,7 +4,7 @@ with t1 as
 (
   select
     co.icustay_id
-  , ceil(extract(EPOCH from mv.starttime-co.intime)/60.0/60.0)::smallint as hr
+  , (extract(EPOCH from mv.starttime-co.intime)/60.0/60.0) as hr
   -- standardize the units to millilitres
   -- also metavision has floating point precision.. but we only care down to the mL
   , round(case
@@ -41,7 +41,7 @@ with t1 as
 (
   select
     co.icustay_id
-  , ceil(extract(EPOCH from cv.charttime-co.intime)/60.0/60.0)::smallint as hr
+  , (extract(EPOCH from cv.charttime-co.intime)/60.0/60.0) as hr
   -- carevue always has units in millilitres
   , round(cv.amount) as amount
   from mp_cohort co
