@@ -129,33 +129,33 @@ def print_cm(y, yhat):
 def vars_of_interest():
     # we extract the min/max for these covariates
     var_min = ['heartrate', 'sysbp', 'diasbp', 'meanbp',
-                'resprate', 'tempc', 'spo2', 'glucose_chart']
+                'resprate', 'tempc', 'spo2']
     var_max = var_min
     var_min.append('gcs')
     #var_max.extend(['rrt','vasopressor','vent'])
 
     # we extract the first/last value for these covariates
     var_first = ['heartrate', 'sysbp', 'diasbp', 'meanbp',
-                'resprate', 'tempc', 'spo2', 'glucose_chart']
+                'resprate', 'tempc', 'spo2']
 
     var_last = var_first
     var_last.extend(['gcsmotor','gcsverbal','gcseyes','endotrachflag','gcs'])
 
-    var_first_early = ['bg_so2', 'bg_po2', 'bg_pco2',
+    var_first_early = ['bg_po2', 'bg_pco2', #'bg_so2'
             #'bg_fio2_chartevents', 'bg_aado2_calc',
             #'bg_fio2', 'bg_aado2',
-            'bg_pao2fio2ratio', 'bg_ph', 'bg_baseexcess', 'bg_bicarbonate',
-            'bg_totalco2', 'bg_hematocrit', 'bg_hemoglobin',
+            'bg_pao2fio2ratio', 'bg_ph', 'bg_baseexcess', #'bg_bicarbonate',
+            'bg_totalco2', #'bg_hematocrit', 'bg_hemoglobin',
             'bg_carboxyhemoglobin', 'bg_methemoglobin',
-            'bg_chloride', 'bg_calcium', 'bg_temperature',
-            'bg_potassium', 'bg_sodium', 'bg_lactate',
-            'bg_glucose',
+            #'bg_chloride', 'bg_calcium', 'bg_temperature',
+            #'bg_potassium', 'bg_sodium', 'bg_lactate',
+            #'bg_glucose',
             # 'bg_tidalvolume', 'bg_intubated', 'bg_ventilationrate', 'bg_ventilator',
             # 'bg_peep', 'bg_o2flow', 'bg_requiredo2',
             # begin lab values
             'aniongap', 'albumin', 'bands', 'bicarbonate', 'bilirubin', 'creatinine',
             'chloride', 'glucose', 'hematocrit', 'hemoglobin', 'lactate', 'platelet',
-            'potassium', 'ptt', 'inr', 'pt', 'sodium', 'bun', 'wbc']
+            'potassium', 'ptt', 'inr', 'sodium', 'bun', 'wbc']
 
     var_last_early = var_first_early
     # fourth set of variables
