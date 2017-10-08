@@ -18,8 +18,16 @@ with serv as
 SELECT
   co.subject_id, co.hadm_id, co.icustay_id
 
-  -- patient level factors
+  -- ====================== --
+  -- Patient level factors --
+  -- ====================== --
+
   , case when pat.gender = 'M' then 1 else 0 end as is_male
+  , ROUND( (CAST(co.intime AS DATE) - CAST(pat.dob AS DATE))  / 365.242, 4) AS age
+
+  -- ====================== --
+  -- Hospital level factors --
+  -- ====================== --
 
   , serv.curr_service
   -- reference is MED
@@ -36,7 +44,6 @@ SELECT
   , case when serv.curr_service = 'ORTHO' then 1 else 0 end as service_ORTHO
   , case when serv.curr_service = 'PSURG' then 1 else 0 end as service_PSURG
   , case when serv.curr_service = 'SURG'  then 1 else 0 end as service_SURG
-
   , case when serv.curr_service = 'GU'    then 1 else 0 end as service_GU
   , case when serv.curr_service = 'GYN'   then 1 else 0 end as service_GYN
   , case when serv.curr_service = 'TRAUM' then 1 else 0 end as service_TRAUM
@@ -52,9 +59,6 @@ SELECT
         'CSURG', 'VSURG'
       ) then 1 else 0 end as service_ANY_CARD_SURG
 
-  -- hospital level factors
-  , ROUND( (CAST(co.intime AS DATE) - CAST(pat.dob AS DATE))  / 365.242, 4) AS age
-
   -- ethnicity flags
   -- , case when adm.ethnicity in
   -- (
@@ -64,6 +68,7 @@ SELECT
   --    , 'WHITE - BRAZILIAN' --     59
   --    , 'WHITE - EASTERN EUROPEAN' --     25
   -- ) then 1 else 0 end as race_white
+
   , case when adm.ethnicity in
   (
         'BLACK/AFRICAN AMERICAN' --   5440
@@ -114,7 +119,10 @@ SELECT
     , 'AMERICAN INDIAN/ALASKA NATIVE FEDERALLY RECOGNIZED TRIBE' --      3
   ) then 1 else 0 end as race_other
 
-  , case when adm.ADMISSION_TYPE in ('URGENT','EMERGENCY') then 1 else 0 end as emergency_admission
+  , case
+      when adm.ADMISSION_TYPE in ('URGENT','EMERGENCY') then 1
+      else 0
+    end as emergency_admission
 
   , ht.Height
   , wt.Weight
