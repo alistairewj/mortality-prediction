@@ -19,7 +19,7 @@ col = [[0.9047, 0.1918, 0.1988],
 marker = ['v','o','d','^','s','o','+']
 ls = ['-','-','-','-','-','s','--','--']
 
-def generate_times(df, T=None, seed=None, censor=False):
+def generate_times(df, T=None, T_to_death=None, seed=None, censor=False):
     # generate a dictionary based off of the analysis type desired
     # creates "windowtime" - the time at the end of the window
 
@@ -62,6 +62,14 @@ def generate_times(df, T=None, seed=None, censor=False):
     else:
         df['windowtime'] = np.floor(tau*(df['endtime']))
 
+
+    if T_to_death is not None:
+        # fix the time for those who die to be T_to_death hours from death
+        # first, isolate patients where they were in the ICU T hours before death
+        idxInICU = (df['deathtime_hours'] - df['dischtime_hours'])<=T_to_death
+        # for these patients, set the time to be T_to_death hours
+        df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
+
     windowtime_dict = df.set_index('icustay_id')['windowtime'].to_dict()
     return windowtime_dict
 
@@ -78,16 +86,16 @@ def generate_times_before_death(df, T=None, T_to_death=None, seed=None):
     if seed is None:
         print('Using default seed 111.')
         seed=111
+    df['endtime'] = df['dischtime_hours']
+    idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
+    df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
+
 
     np.random.seed(seed)
 
     # df is centered on intime (as t=0)
     # we need to ensure a random time is at least T hours from death/discharge
-
     tau = np.random.rand(df.shape[0])
-    df['endtime'] = df['dischtime_hours']
-    idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
-    df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
 
     if T is not None:
         # extract window at least T hours before discharge/death
@@ -101,7 +109,7 @@ def generate_times_before_death(df, T=None, T_to_death=None, seed=None):
     if T_to_death is not None:
         # fix the time for those who die to be T_to_death hours from death
         # first, isolate patients where they were in the ICU T hours before death
-        idxInICU = (df['dischtime_hours'] - df['deathtime_hours'])<=T_to_death
+        idxInICU = (df['deathtime_hours'] - df['dischtime_hours'])<=T_to_death
         # for these patients, set the time to be T_to_death hours
         df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
 
