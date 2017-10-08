@@ -15,8 +15,28 @@ with serv as
     , ROW_NUMBER() over (PARTITION BY hadm_id ORDER BY transfertime) as rn
   from services
 )
+-- censor time extracted as first time code status changed
+, cs as
+(
+  select cs.icustay_id
+    , min(cs.charttime) as censortime
+  from mp_code_status cs
+  where cmo+dnr+dni+dncpr+cmo_notes>0
+  group by cs.icustay_id
+)
 SELECT
   co.subject_id, co.hadm_id, co.icustay_id
+
+  -- ======== --
+  -- Outcomes --
+  -- ======== --
+
+  , ceil(extract(epoch from (co.outtime - co.intime))/60.0/60.0) as dischtime_hours
+  , ceil(extract(epoch from (adm.deathtime - co.intime))/60.0/60.0) as deathtime_hours
+  , case when adm.deathtime is null then 0 else 1 end as death
+
+  -- code status
+  , ceil(extract(epoch from min(cs.charttime-co.intime) )/60.0/60.0) as censortime_hours
 
   -- ====================== --
   -- Patient level factors --
@@ -142,5 +162,7 @@ left join weightfirstday wt
 left join serv
   on co.hadm_id = serv.hadm_id
   and serv.rn = 1
+left join mp_code_status cs
+  on co.icustay_id = cs.icustay_id
 where co.excluded = 0
 ORDER BY co.subject_id, co.hadm_id, co.icustay_id;
