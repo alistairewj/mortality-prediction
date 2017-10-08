@@ -1,4 +1,12 @@
--- demographics, etc
+-- extract static vars into a separate dataframe
+-- static vars contain the following:
+--  - demographics (gender, age)
+--  - hospital admission type
+--  - hospital service
+--  - race
+--  - height, weight, BMI
+--  - outcome
+
 DROP TABLE IF EXISTS mp_static_data CASCADE;
 CREATE TABLE mp_static_data AS
 with serv as
