@@ -36,7 +36,7 @@ SELECT
   , case when adm.deathtime is null then 0 else 1 end as death
 
   -- code status
-  , ceil(extract(epoch from min(cs.charttime-co.intime) )/60.0/60.0) as censortime_hours
+  , ceil(extract(epoch from cs.censortime-co.intime )/60.0/60.0) as censortime_hours
 
   -- ====================== --
   -- Patient level factors --
@@ -162,7 +162,7 @@ left join weightfirstday wt
 left join serv
   on co.hadm_id = serv.hadm_id
   and serv.rn = 1
-left join mp_code_status cs
+left join cs
   on co.icustay_id = cs.icustay_id
 where co.excluded = 0
 ORDER BY co.subject_id, co.hadm_id, co.icustay_id;
