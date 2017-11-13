@@ -24,7 +24,7 @@ def generate_times(df, T=None, T_to_death=None, seed=None, censor=False):
     # creates "windowtime" - the time at the end of the window
 
     # df needs to have the following fields:
-    #   icustay_id (not as an index)
+    #   icustay_id (as an index)
     #   dischtime_hours
     #   deathtime_hours
     #   censortime_hours (if censoring with censor=True)
@@ -70,7 +70,7 @@ def generate_times(df, T=None, T_to_death=None, seed=None, censor=False):
         # for these patients, set the time to be T_to_death hours
         df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
 
-    windowtime_dict = df.set_index('icustay_id')['windowtime'].to_dict()
+    windowtime_dict = df['windowtime'].to_dict()
     return windowtime_dict
 
 
