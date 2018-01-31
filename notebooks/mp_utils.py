@@ -18,8 +18,7 @@ col = [[0.9047, 0.1918, 0.1988],
     [0.5313, 0.3359, 0.6523]];
 marker = ['v','o','d','^','s','o','+']
 ls = ['-','-','-','-','-','s','--','--']
-
-def generate_times(df, T=None, T_to_death=None, seed=None, censor=False):
+def generate_times(df, T=None, T_to_death=None, seed=None, censor=False, T_low=None, T_high=None):
     # generate a dictionary based off of the analysis type desired
     # creates "windowtime" - the time at the end of the window
 
@@ -34,45 +33,62 @@ def generate_times(df, T=None, T_to_death=None, seed=None, censor=False):
         seed=111
 
     # create endtime: this is the last allowable time for our window
-    df['endtime'] = df['dischtime_hours']
+    df['endtime_hours'] = df['dischtime_hours'].copy()
 
     # if they die before discharge, set the end time to the time of death
     idx = (~df['deathtime_hours'].isnull()) & (df['deathtime_hours']<df['dischtime_hours'])
-    df.loc[idx,'endtime'] = df.loc[idx,'deathtime_hours']
+    df.loc[idx,'endtime_hours'] = df.loc[idx,'deathtime_hours']
+
 
     # optionally censor the data
     # this involves updating the endtime to an even earlier time, if present
     # e.g. the first time a patient was made DNR
     if censor:
-        idx = (~df['censortime_hours'].isnull()) & (df['censortime_hours']<df['endtime'])
-        df.loc[idx,'endtime'] = df.loc[idx,'censortime_hours']
+        idx = (~df['censortime_hours'].isnull()) & (df['censortime_hours']<df['endtime_hours'])
+        df.loc[idx,'endtime_hours'] = df.loc[idx,'censortime_hours']
 
-    # now generate the end of the window
-    # this is X hours
-    np.random.seed(seed)
-    tau = np.random.rand(df.shape[0])
     # T adds a bit of fuzziness to prevent information leakage
-    if T is not None:
-        # extract window at least T hours before discharge/death
-        df['windowtime'] = np.floor(tau*(df['endtime']-T))
+    if T is None:
+        idx = df['endtime_hours'] == df['dischtime_hours']
+        df.loc[idx,'endtime_hours'] = df.loc[idx,'endtime_hours'] - T
+
         # if the stay is shorter than T hours, the interval can be negative
         # in this case, we set the interval to 0
         # usually, this will mean we only have lab data
-        df.loc[df['windowtime']<0, 'windowtime'] = 0
-    else:
-        df['windowtime'] = np.floor(tau*(df['endtime']))
+        df.loc[df['endtime_hours']<0, 'endtime_hours'] = 0
 
+    if T_high is not None:
+        # T_high limits how late into the ICU stay the window can be generated
+        idx = df['endtime_hours'] > T_high
+        df.loc[idx,'endtime_hours'] = T_high
+
+    # now generate the time for the end of the window
+    np.random.seed(seed)
+    # random numbers [0, 1) ** may include 1 due to bug in numpy
+    tau = np.random.rand(df.shape[0])
+
+    df['windowtime_hours'] = df['endtime_hours'].copy()
+
+    if T_low is not None:
+        # T_low is the minimum start time - if we specify this then:
+        #   1) windowtime = endtime if endtime < T_low (already done above)
+        #   2) window time ~ U[T_low, endtime] if endtime >= T_low (done below)
+        idx = df['endtime_hours'] >= T_low
+        df.loc[idx, 'windowtime_hours'] = np.floor(tau[idx]*(df.loc[idx, 'windowtime_hours']-T_low+1))+T_low
+    else:
+        df.loc[:,'windowtime_hours'] = np.floor(tau*(df['endtime_hours']))
+
+    df.loc[df['windowtime_hours']<0, 'windowtime_hours'] = 0
 
     if T_to_death is not None:
         # fix the time for those who die to be T_to_death hours from death
         # first, isolate patients where they were in the ICU T hours before death
         idxInICU = (df['deathtime_hours'] - df['dischtime_hours'])<=T_to_death
         # for these patients, set the time to be T_to_death hours
-        df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
+        df.loc[idxInICU, 'windowtime_hours'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
 
-    windowtime_dict = df['windowtime'].to_dict()
+    windowtime_dict = df['windowtime_hours'].to_dict()
     return windowtime_dict
-
 
 def generate_times_before_death(df, T=None, T_to_death=None, seed=None):
     # generate a dictionary based off of the analysis type desired
@@ -99,21 +115,21 @@ def generate_times_before_death(df, T=None, T_to_death=None, seed=None):
 
     if T is not None:
         # extract window at least T hours before discharge/death
-        df['windowtime'] = np.floor(tau*(df['endtime']-T))
+        df['windowtime_hours'] = np.floor(tau*(df['endtime']-T))
         # if the stay is shorter than T hours, the interval can be negative
         # in this case, we set the interval to 0
-        df.loc[df['windowtime']<0, 'windowtime'] = 0
+        df.loc[df['windowtime_hours']<0, 'windowtime_hours'] = 0
     else:
-        df['windowtime'] = np.floor(tau*(df['endtime']))
+        df['windowtime_hours'] = np.floor(tau*(df['endtime']))
 
     if T_to_death is not None:
         # fix the time for those who die to be T_to_death hours from death
         # first, isolate patients where they were in the ICU T hours before death
         idxInICU = (df['deathtime_hours'] - df['dischtime_hours'])<=T_to_death
         # for these patients, set the time to be T_to_death hours
-        df.loc[idxInICU, 'windowtime'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
+        df.loc[idxInICU, 'windowtime_hours'] = df.loc[idxInICU,'deathtime_hours'] - T_to_death
 
-    windowtime_dict = df.set_index('icustay_id')['windowtime'].to_dict()
+    windowtime_dict = df.set_index('icustay_id')['windowtime_hours'].to_dict()
     return windowtime_dict
 
 # pretty confusion matrices!
